@@ -35,7 +35,7 @@ export function getMeepoModels(orchestrator: MeepoOrchestrator) {
       id: 'mesh',
       name: 'Meepo Multi-Brain Mesh (Auto-Routing)',
       reasoning: true,
-      input: ['text' as const],
+      input: ['text', 'image'] as ('text' | 'image')[],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 131072,
       maxTokens: 16384,
@@ -44,7 +44,7 @@ export function getMeepoModels(orchestrator: MeepoOrchestrator) {
       id: 'chat',
       name: `Meepo Chat (${cfg.roles.chat.modelId})`,
       reasoning: false,
-      input: ['text' as const],
+      input: ['text', 'image'] as ('text' | 'image')[],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: cfg.roles.chat.contextWindow ?? 131072,
       maxTokens: 16384,
@@ -71,7 +71,7 @@ export function getMeepoModels(orchestrator: MeepoOrchestrator) {
       id: 'cloud',
       name: `Meepo Cloud (${cfg.roles.cloud.modelId})`,
       reasoning: true,
-      input: ['text' as const],
+      input: ['text', 'image'] as ('text' | 'image')[],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 200000,
       maxTokens: 16384,
@@ -136,10 +136,18 @@ export function streamMeepo(
         } else {
           // Extract latest user prompt
           const lastUser = [...collapsed.messages].reverse().find((m) => m.role === 'user');
-          const userPrompt = lastUser ? contentText(lastUser.content) : '';
+          const hasImage =
+            Array.isArray(lastUser?.content) &&
+            lastUser.content.some((c) => (c as { type?: string }).type === 'image');
 
-          routingDecision = await orchestrator.routeTurn(userPrompt, allToolNames);
-          targetRole = routingDecision.targetRole;
+          if (hasImage) {
+            // Multimodal input: route directly to Gemma 4 (chat) as vision encoder
+            targetRole = 'chat';
+          } else {
+            const userPrompt = lastUser ? contentText(lastUser.content) : '';
+            routingDecision = await orchestrator.routeTurn(userPrompt, allToolNames);
+            targetRole = routingDecision.targetRole;
+          }
         }
       } else if (model.id in orchestrator.getConfig().roles) {
         targetRole = model.id as BrainRole;

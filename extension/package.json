@@ -2,12 +2,27 @@
   "name": "pi-meepo",
   "version": "0.1.0",
   "description": "Zero-config auto-wiring and lifecycle manager for Meepo AI mesh in Pi",
+  "author": "wfzyx",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-extension",
+    "meepo",
+    "llama-server",
+    "llm-router"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wfzyx/meepo.git",
+    "directory": "extension"
+  },
+  "homepage": "https://github.com/wfzyx/meepo/tree/master/extension#readme",
+  "bugs": {
+    "url": "https://github.com/wfzyx/meepo/issues"
+  },
   "pi": {
     "extensions": [
       "dist/index.js"
@@ -17,13 +32,13 @@
     "dist",
     "README.md"
   ],
-  "license": "Apache-2.0",
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node && tsc --emitDeclarationOnly",
     "prepublishOnly": "bun run build && bun test",
     "test": "bun test"
   },
   "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
     "@mariozechner/pi-coding-agent": "*"
   },
   "devDependencies": {

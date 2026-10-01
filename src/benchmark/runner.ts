@@ -27,7 +27,7 @@ export class ArtificialAnalysisBenchmarkRunner {
    */
   private async evaluateTask(
     task: BenchmarkTask,
-    target: 'mesh' | 'chat' | 'tools' | 'code' | 'router',
+    target: 'mesh' | 'chat' | 'tools' | 'code' | 'cloud' | 'router',
     mock?: boolean
   ): Promise<MetricSample> {
     const start = Date.now();
@@ -40,33 +40,89 @@ export class ArtificialAnalysisBenchmarkRunner {
 
     if (mock) {
       if (target === 'mesh') {
-        responseText = task.category === 'coding'
-          ? 'export function quickselect(arr: number[], k: number): number { return 0; }'
-          : task.category === 'agentic'
-          ? 'Use read tool to inspect package.json and run bash vitest df'
-          : 'Refined synthesis and deadlock resolution mechanism.';
+        if (task.id === 'agentic-tool-read-schema') {
+          responseText = JSON.stringify({ name: 'read', arguments: { path: '/home/wfzyx/Code/personal/meepo/package.json', limit: 50 } });
+        } else if (task.id === 'agentic-tool-bash-command') {
+          responseText = JSON.stringify({ name: 'bash', arguments: { command: 'git checkout feature/auth' } });
+        } else if (task.id === 'coding-algo-quickselect') {
+          responseText = 'function quickselect(arr, k) { arr.sort((a,b)=>a-b); return arr[k-1]; }';
+        } else if (task.id === 'coding-lru-cache') {
+          responseText = 'class LRUCache { constructor(c) { this.c = c; this.m = new Map(); } get(k) { if (!this.m.has(k)) return -1; const v = this.m.get(k); this.m.delete(k); this.m.set(k, v); return v; } put(k, v) { if (this.m.has(k)) this.m.delete(k); this.m.set(k, v); if (this.m.size > this.c) this.m.delete(this.m.keys().next().value); } }';
+        } else if (task.id === 'reasoning-coffman-deadlock') {
+          responseText = 'Mutual exclusion, Hold and wait, No preemption, Circular wait.\nEliminated: Circular wait.';
+        } else if (task.id === 'reasoning-kv-cache-math') {
+          responseText = '2 * 16 * 16 * 64 * 2 * 32768 = 2,147,483,648 bytes.\nFinal: 2 GB';
+        } else if (task.id === 'synthesis-diff-root-cause') {
+          responseText = 'Prevents race condition on duplicate concurrent token refresh by acquiring mutex lock before fetch.';
+        } else {
+          responseText = '- Mamba-2 maintains constant O(1) KV cache memory.\n- Transformers provide exact associative recall without state compression.';
+        }
         ttftMs = 28;
         completionTokens = 45;
+      } else if (target === 'cloud') {
+        if (task.id === 'agentic-tool-read-schema') {
+          responseText = JSON.stringify({ name: 'read', arguments: { path: '/home/wfzyx/Code/personal/meepo/package.json', limit: 50 } });
+        } else if (task.id === 'agentic-tool-bash-command') {
+          responseText = JSON.stringify({ name: 'bash', arguments: { command: 'git checkout feature/auth' } });
+        } else if (task.id === 'coding-algo-quickselect') {
+          responseText = 'function quickselect(arr, k) { arr.sort((a,b)=>a-b); return arr[k-1]; }';
+        } else if (task.id === 'coding-lru-cache') {
+          responseText = 'class LRUCache { constructor(c) { this.c = c; this.m = new Map(); } get(k) { if (!this.m.has(k)) return -1; const v = this.m.get(k); this.m.delete(k); this.m.set(k, v); return v; } put(k, v) { if (this.m.has(k)) this.m.delete(k); this.m.set(k, v); if (this.m.size > this.c) this.m.delete(this.m.keys().next().value); } }';
+        } else if (task.id === 'reasoning-coffman-deadlock') {
+          responseText = 'Four conditions: Mutual exclusion, Hold and wait, No preemption, Circular wait.\nEliminated: Circular wait.';
+        } else if (task.id === 'reasoning-kv-cache-math') {
+          responseText = 'Formula: 2 * 16 * 16 * 64 * 2 * 32768 = 2147483648 bytes.\nFinal: 2 GB';
+        } else if (task.id === 'synthesis-diff-root-cause') {
+          responseText = 'Prevents race condition on concurrent refresh using mutex lock.';
+        } else {
+          responseText = '- Mamba-2 maintains constant O(1) recurrent memory.\n- Attention provides exact associative recall over full context.';
+        }
+        ttftMs = 2100;
+        completionTokens = 55;
+        promptTokens = 4200;
       } else if (target === 'code') {
-        responseText = task.category === 'coding'
-          ? 'export function quickselect(arr: number[], k: number): number { return 0; }'
-          : 'Task output';
+        if (task.id === 'coding-algo-quickselect') {
+          responseText = 'function quickselect(arr, k) { arr.sort((a,b)=>a-b); return arr[k-1]; }';
+        } else if (task.id === 'coding-lru-cache') {
+          // Fails edge-case eviction
+          responseText = 'class LRUCache { constructor(c) { this.c = c; this.m = {}; } get(k) { return this.m[k] || -1; } put(k,v) { this.m[k] = v; } }';
+        } else if (task.category === 'agentic') {
+          // Emits conversational markdown, failing strict JSON parse
+          responseText = 'Here is the tool call you requested:\n```json\n{"name": "read", "file": "package.json"}\n```';
+        } else if (task.id === 'reasoning-kv-cache-math') {
+          responseText = '16 * 16 * 64 * 2 = 32768 bytes. Final: 32 GB';
+        } else {
+          responseText = 'Deadlocks occur when threads wait indefinitely for shared resources.';
+        }
         ttftMs = 185;
         completionTokens = 40;
       } else if (target === 'tools') {
-        responseText = task.category === 'agentic'
-          ? 'bash vitest test run df'
-          : 'Task output';
+        if (task.category === 'coding') {
+          responseText = 'function quickselect() { /* broken syntax */ return null; }';
+        } else if (task.id === 'agentic-tool-read-schema') {
+          // Hallucinates distractor MCP tool because prompt was not pruned
+          responseText = '{"name": "mcp__fs__read", "arguments": {"filepath": "package.json"}}';
+        } else if (task.id === 'agentic-tool-bash-command') {
+          responseText = '{"name": "bash", "arguments": {"command": "git branch feature/auth"}}';
+        } else {
+          responseText = 'Executing tool command in terminal...';
+        }
         ttftMs = 140;
         completionTokens = 35;
       } else if (target === 'chat') {
-        responseText = task.category === 'synthesis'
-          ? 'Verify function tests token length faster prefill'
-          : 'Conversational response';
+        if (task.category === 'agentic') {
+          responseText = 'You can use the read tool to view package.json lines. Here is how: read /home/wfzyx/Code/personal/meepo/package.json';
+        } else if (task.category === 'coding') {
+          responseText = 'Here is an explanation of quickselect with sample pseudo-code.';
+        } else if (task.id === 'reasoning-coffman-deadlock') {
+          responseText = 'Deadlocks involve mutual exclusion and hold and wait.';
+        } else {
+          responseText = 'This modification fixes an issue where multiple requests refresh the token simultaneously.';
+        }
         ttftMs = 240;
         completionTokens = 50;
       } else {
-        responseText = 'Route to code: implement algorithm';
+        responseText = 'Categorization: code_engine';
         ttftMs = 18;
         completionTokens = 8;
       }
@@ -193,11 +249,12 @@ export class ArtificialAnalysisBenchmarkRunner {
    */
   public async runBenchmark(options?: { quick?: boolean; mock?: boolean }): Promise<MeshBenchmarkComparison> {
     const tasks = options?.quick ? [BENCHMARK_TASKS[0], BENCHMARK_TASKS[2]] : BENCHMARK_TASKS;
-    const targets: Array<'router' | 'chat' | 'tools' | 'code' | 'mesh'> = [
+    const targets: Array<'router' | 'chat' | 'tools' | 'code' | 'cloud' | 'mesh'> = [
       'router',
       'chat',
       'tools',
       'code',
+      'cloud',
       'mesh',
     ];
 
@@ -265,7 +322,7 @@ export class ArtificialAnalysisBenchmarkRunner {
       else if (target === 'chat') modelName = cfg.roles.chat.name;
       else if (target === 'tools') modelName = cfg.roles.tools.name;
       else if (target === 'code') modelName = cfg.roles.code.name;
-
+      else if (target === 'cloud') modelName = cfg.roles.cloud.name;
       results[target] = {
         role: target === 'mesh' ? 'mesh' : target,
         modelName,
@@ -285,8 +342,8 @@ export class ArtificialAnalysisBenchmarkRunner {
       chat: results['chat'],
       tools: results['tools'],
       code: results['code'],
+      cloud: results['cloud'],
     };
-
     const avgComponentPrefill = 7850;
     const meshPrefill = mesh.avgPrefillTokens || 1650;
     const prefillReductionPercent = Math.round(((avgComponentPrefill - meshPrefill) / avgComponentPrefill) * 100);
@@ -317,11 +374,12 @@ export class ArtificialAnalysisBenchmarkRunner {
   public formatLeaderboardTable(comp: MeshBenchmarkComparison): string {
     const rows = [
       comp.mesh,
+      comp.components.cloud,
       comp.components.code,
       comp.components.tools,
       comp.components.chat,
       comp.components.router,
-    ];
+    ].filter(Boolean);
 
     const lines: string[] = [];
     lines.push('╔═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗');

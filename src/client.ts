@@ -162,7 +162,10 @@ export class MeepoMeshClient {
     }
 
     const data = (await res.json()) as any;
-    const content = data.choices?.[0]?.message?.content || '';
+    const msg = data.choices?.[0]?.message;
+    const content = (msg?.content && msg.content.trim().length > 0)
+      ? msg.content
+      : (msg?.reasoning_content || '');
     const tokens = data.usage?.completion_tokens;
 
     return {
@@ -318,7 +321,7 @@ Respond with strict JSON ONLY matching this format:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        { temperature: 0.1 }
+        { temperature: 0.1, maxTokens: 128 }
       );
 
       let clean = result.content.trim();
@@ -384,7 +387,7 @@ ${req.diff}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        { temperature: 0.2 }
+        { temperature: 0.2, maxTokens: 128 }
       );
 
       const prose = result.content.trim();

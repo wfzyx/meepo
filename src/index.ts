@@ -25,7 +25,9 @@ export * from './client';
 export * from './router';
 export * from './orchestrator';
 export * from './provider';
-
+export * from './benchmark/types';
+export * from './benchmark/tasks';
+export * from './benchmark/runner';
 export default function registerMeepoExtension(pi: ExtensionAPI) {
   const orchestrator = new MeepoOrchestrator();
 
@@ -171,6 +173,25 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
           break;
         }
 
+        case 'benchmark':
+        case 'eval': {
+          ctx.ui?.notify?.('Running Artificial Analysis Intelligence Index benchmark...', 'info');
+          try {
+            const { ArtificialAnalysisBenchmarkRunner } = await import('./benchmark/runner');
+            const runner = new ArtificialAnalysisBenchmarkRunner(orchestrator);
+            const isQuick = parts.includes('--quick');
+            const comparison = await runner.runBenchmark({ quick: isQuick });
+            const table = runner.formatLeaderboardTable(comparison);
+            if (typeof ctx.ui?.output === 'function') {
+              ctx.ui.output(table);
+            } else {
+              console.log(table);
+            }
+          } catch (err: any) {
+            ctx.ui?.notify?.(`Benchmark failed: ${err.message}`, 'error');
+          }
+          break;
+        }
         default:
           ctx.ui?.notify?.(
             `Unknown meepo subcommand '${sub}'. Use status, config, reload, models, use, cloud, or code.`,

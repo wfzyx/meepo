@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "benchmark": "bun run src/benchmark/cli.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "latest"

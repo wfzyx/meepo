@@ -40,6 +40,11 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/v1/health", s.handleHealth)
 	mux.HandleFunc("/v1/models", s.handleModels)
+	mux.HandleFunc("/models", s.handleModels)
+	mux.HandleFunc("/props", s.handleProps)
+	mux.HandleFunc("/models/sse", s.handleModelsSSE)
+	mux.HandleFunc("/models/load", s.handleModelsLoad)
+	mux.HandleFunc("/models/unload", s.handleModelsUnload)
 	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
 
 	s.httpServer = &http.Server{
@@ -109,14 +114,87 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"object": "list",
 		"data": []map[string]interface{}{
-			{"id": "mesh", "object": "model", "created": 1733234400, "owned_by": "meepo"},
-			{"id": "meepo/mesh", "object": "model", "created": 1733234400, "owned_by": "meepo"},
-			{"id": "chat", "object": "model", "created": 1733234400, "owned_by": "meepo"},
-			{"id": "tools", "object": "model", "created": 1733234400, "owned_by": "meepo"},
-			{"id": "code", "object": "model", "created": 1733234400, "owned_by": "meepo"},
-			{"id": "cloud", "object": "model", "created": 1733234400, "owned_by": "meepo"},
+			{
+				"id":           "mesh",
+				"object":       "model",
+				"created":      1733234400,
+				"owned_by":     "meepo",
+				"status":       map[string]string{"value": "loaded"},
+				"architecture": map[string]interface{}{"input_modalities": []string{"text", "image"}, "output_modalities": []string{"text"}},
+				"meta":         map[string]int{"n_ctx": 131072, "n_ctx_train": 131072},
+			},
+			{
+				"id":           "chat",
+				"object":       "model",
+				"created":      1733234400,
+				"owned_by":     "meepo",
+				"status":       map[string]string{"value": "loaded"},
+				"architecture": map[string]interface{}{"input_modalities": []string{"text", "image"}, "output_modalities": []string{"text"}},
+				"meta":         map[string]int{"n_ctx": 131072, "n_ctx_train": 131072},
+			},
+			{
+				"id":           "tools",
+				"object":       "model",
+				"created":      1733234400,
+				"owned_by":     "meepo",
+				"status":       map[string]string{"value": "loaded"},
+				"architecture": map[string]interface{}{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
+				"meta":         map[string]int{"n_ctx": 32768, "n_ctx_train": 32768},
+			},
+			{
+				"id":           "code",
+				"object":       "model",
+				"created":      1733234400,
+				"owned_by":     "meepo",
+				"status":       map[string]string{"value": "loaded"},
+				"architecture": map[string]interface{}{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
+				"meta":         map[string]int{"n_ctx": 32768, "n_ctx_train": 32768},
+			},
+			{
+				"id":           "cloud",
+				"object":       "model",
+				"created":      1733234400,
+				"owned_by":     "meepo",
+				"status":       map[string]string{"value": "loaded"},
+				"architecture": map[string]interface{}{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
+				"meta":         map[string]int{"n_ctx": 200000, "n_ctx_train": 200000},
+			},
 		},
 	})
+}
+
+func (s *Server) handleProps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"models_autoload": true,
+		"chat_template":   "enable_thinking",
+	})
+}
+
+func (s *Server) handleModelsLoad(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok"})
+}
+
+func (s *Server) handleModelsUnload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok"})
+}
+
+func (s *Server) handleModelsSSE(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+
+	fmt.Fprintf(w, "data: {\"model\":\"mesh\",\"event\":\"model_status\",\"data\":{\"status\":\"loaded\"}}\n\n")
+	if ok {
+		flusher.Flush()
+	}
 }
 
 type ChatMessage struct {

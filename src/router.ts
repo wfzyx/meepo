@@ -125,7 +125,7 @@ export class MeepoRouter {
   /**
    * Calculate tool schema pruning to protect CPU prefill latency
    */
-  private calculateToolPruning(
+  public calculateToolPruning(
     role: BrainRole,
     availableTools: string[]
   ): { allowed: string[]; pruned: string[] } {

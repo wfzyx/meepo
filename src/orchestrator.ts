@@ -39,6 +39,13 @@ export class MeepoOrchestrator {
     return this.config;
   }
 
+  public getRouter(): MeepoRouter {
+    return this.router;
+  }
+
+  public getClient(): MeepoMeshClient {
+    return this.client;
+  }
   public reloadConfig(): MeepoConfig {
     this.config = this.loadConfig();
     this.client.updateConfig(this.config);

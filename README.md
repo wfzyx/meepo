@@ -95,9 +95,47 @@ ln -s ~/Code/personal/meepo/src/index.ts ~/.pi/agent/extensions/meepo.ts
 
 ---
 
+## 🧠 First-Class Model Provider & Invisible Flow Swapping
+
+Meepo registers itself as a native model provider in Pi (`meepo`). The end user simply activates Meepo via `/model meepo/mesh` and works normally. **All brain swapping and tool pruning happens invisibly behind the scenes.**
+
+```text
+User Turn
+   │
+   ▼
+[meepo/mesh] (Pi Provider streamSimple)
+   │
+   ├── 1. Intent Triage via Von 1.3.5 (<30ms OptionMarker)
+   │      - Determines role: chat, tools, code, or cloud
+   │
+   ├── 2. Dynamic Tool Pruning (Turn 1 Prompt Diet)
+   │      - Strips 15+ irrelevant tool schemas from system prompt
+   │      - Slashes prefill from 8,000 tokens down to ~1,500 tokens
+   │
+   └── 3. Invisible Model Dispatch
+          ├── chat  ➔ Gemma 4 E2B-it (128k context conversational reasoning)
+          ├── tools ➔ LFM 2.5 1.2B-Instruct (160 tok/s tool-call mechanics)
+          ├── code  ➔ Qwen 3.5 2B (Gated Delta isolated syntax/patch synthesis)
+          └── cloud ➔ Claude Opus 5.5 (non-local escalation for deadlocks)
+```
+
+### Registered Models
+| Model ID | Provider | Function | Context |
+| :--- | :--- | :--- | :--- |
+| **`meepo/mesh`** | `meepo` | **Flagship Multi-Brain Mesh** (Invisible Auto-Routing) | 128k |
+| **`meepo/chat`** | `meepo` | Direct access to Gemma 4 E2B-it | 128k |
+| **`meepo/tools`** | `meepo` | Direct access to LFM 2.5 1.2B-Instruct | 32k |
+| **`meepo/code`** | `meepo` | Direct access to Qwen 3.5 2B | 32k |
+| **`meepo/cloud`** | `meepo` | Direct access to Claude Opus 5.5 | 200k |
+
+---
+
 ## 🛠️ Pi Commands & Tools
 
-### Commands
+### Slash Commands
+- `/model meepo/mesh` — Standard Pi command to activate the Meepo Auto-Routing mesh.
+- `/meepo models` — List all registered Meepo models and their roles.
+- `/meepo use <model>` — Quick-switch active Pi model to a Meepo brain (e.g. `/meepo use mesh`).
 - `/meepo status` — Display the live terminal health dashboard for all 5 brains.
 - `/meepo config` — Show the active multi-model configuration.
 - `/meepo reload` — Hot-reload `meepo.config.json` without restarting Pi.
@@ -107,8 +145,6 @@ ln -s ~/Code/personal/meepo/src/index.ts ~/.pi/agent/extensions/meepo.ts
 ### Tools Registered for the Agent
 - `meepo_ask_cloud` — Allows the agent to escalate hard problems to Claude Opus.
 - `meepo_generate_code` — Allows the agent to delegate complex function implementations to Qwen 3.5.
-
----
 
 ## 📄 License
 Apache-2.0. Copyright (c) 2026 wfzyx.

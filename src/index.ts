@@ -13,10 +13,25 @@
 import { Type } from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { MeepoOrchestrator } from './orchestrator';
+import {
+  createMeepoProviderConfig,
+  getMeepoModels,
+  MEEPO_API_NAME,
+  MEEPO_PROVIDER_ID,
+} from './provider';
+
+export * from './types';
+export * from './client';
+export * from './router';
+export * from './orchestrator';
+export * from './provider';
 
 export default function registerMeepoExtension(pi: ExtensionAPI) {
   const orchestrator = new MeepoOrchestrator();
 
+  // 1. Register Meepo as a first-class Model Provider in Pi
+  // Enables /model meepo/mesh, meepo/chat, meepo/tools, meepo/code, meepo/cloud
+  pi.registerProvider(MEEPO_PROVIDER_ID, createMeepoProviderConfig(orchestrator));
   // 1. Slash Command: /meepo [status | config | reload | cloud | code]
   pi.registerCommand('meepo', {
     description: 'Inspect and manage the Meepo multi-brain intelligence mesh',
@@ -104,8 +119,63 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
           break;
         }
 
+        case 'models': {
+          const models = getMeepoModels(orchestrator);
+          let text = 'Meepo Models Registered:\n';
+          for (const m of models) {
+            text += `  • meepo/${m.id.padEnd(6)} - ${m.name}\n`;
+          }
+          text += '\nSelect in Pi via /model meepo/mesh (or /meepo use mesh)';
+          if (typeof ctx.ui?.output === 'function') {
+            ctx.ui.output(text);
+          } else {
+            console.log(text);
+          }
+          break;
+        }
+
+        case 'use':
+        case 'activate': {
+          const targetId = parts[1]?.toLowerCase() || 'mesh';
+          const models = getMeepoModels(orchestrator);
+          const found = models.find((m) => m.id === targetId);
+          if (!found) {
+            ctx.ui?.notify?.(
+              `Unknown Meepo model '${targetId}'. Available: ${models.map((m) => m.id).join(', ')}`,
+              'error'
+            );
+            return;
+          }
+
+          if (typeof (pi as any).setModel === 'function') {
+            try {
+              await (pi as any).setModel({
+                id: found.id,
+                name: found.name,
+                api: MEEPO_API_NAME,
+                provider: MEEPO_PROVIDER_ID,
+                baseUrl: orchestrator.getConfig().llamaServer.baseUrl,
+                reasoning: found.reasoning,
+                input: found.input,
+                cost: found.cost,
+                contextWindow: found.contextWindow,
+                maxTokens: found.maxTokens,
+              });
+              ctx.ui?.notify?.(`Active model switched to meepo/${found.id}`, 'info');
+            } catch (err: any) {
+              ctx.ui?.notify?.(`Failed to switch model: ${err.message}`, 'error');
+            }
+          } else {
+            ctx.ui?.notify?.(`Use command: /model meepo/${found.id}`, 'info');
+          }
+          break;
+        }
+
         default:
-          ctx.ui?.notify?.(`Unknown meepo subcommand '${sub}'. Use status, config, reload, cloud, or code.`, 'warning');
+          ctx.ui?.notify?.(
+            `Unknown meepo subcommand '${sub}'. Use status, config, reload, models, use, cloud, or code.`,
+            'warning'
+          );
       }
     },
   });
@@ -225,9 +295,9 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
       try {
         const health = await orchestrator.getHealth();
         if (health.allHealthy) {
-          ctx.ui?.notify?.('[meepo] Multi-brain mesh active. Run /meepo for status.', 'info');
+          ctx.ui?.notify?.('[meepo] Model registered: meepo/mesh (Auto-Routing). Ready for /model meepo/mesh.', 'info');
         } else {
-          ctx.ui?.notify?.('[meepo] Multi-brain mesh partially offline. Run /meepo status to check.', 'warning');
+          ctx.ui?.notify?.('[meepo] Model registered: meepo/mesh. (Mesh partially offline - run /meepo status)', 'warning');
         }
       } catch {}
     });

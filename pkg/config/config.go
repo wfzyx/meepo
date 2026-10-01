@@ -51,6 +51,7 @@ type PolicyConfig struct {
 	AutoPruneTools                  bool     `json:"autoPruneTools"`
 	CodeEngineOffloadThresholdLines int      `json:"codeEngineOffloadThresholdLines"`
 	CloudEscalationTriggers         []string `json:"cloudEscalationTriggers"`
+	WarmupPrefill                   bool     `json:"warmupPrefill"`
 }
 
 type Config struct {
@@ -122,6 +123,7 @@ func DefaultConfig() *Config {
 				"repeated_error",
 				"stated_uncertainty",
 			},
+			WarmupPrefill: true,
 		},
 	}
 }
@@ -165,6 +167,10 @@ func LoadConfig(customPath string) (*Config, error) {
 	cfg := DefaultConfig()
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config %s: %w", targetPath, err)
+	}
+
+	if val := os.Getenv("MEEPO_WARMUP_PREFILL"); val != "" {
+		cfg.Policy.WarmupPrefill = (val == "1" || val == "true")
 	}
 
 	return cfg, nil

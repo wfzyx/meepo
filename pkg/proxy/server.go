@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -48,12 +49,16 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("/models/unload", s.handleModelsUnload)
 	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/v1/shutdown", s.handleShutdown)
+	mux.HandleFunc("/v1/warmup", s.handleWarmup)
 
 	s.httpServer = &http.Server{
 		Addr:    addr,
 		Handler: corsMiddleware(mux),
 	}
 
+	if s.cfg.Policy.WarmupPrefill {
+		go s.WarmupAllRoles()
+	}
 	return s.httpServer.ListenAndServe()
 }
 
@@ -81,6 +86,96 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		_ = s.Shutdown(context.Background())
 		os.Exit(0)
 	}()
+}
+
+func (s *Server) handleWarmup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type WarmupReq struct {
+		SystemPrompt string `json:"system_prompt,omitempty"`
+		Model        string `json:"model,omitempty"`
+	}
+	var req WarmupReq
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	go func() {
+		if req.Model != "" {
+			sys := req.SystemPrompt
+			if sys == "" {
+				sys = "You are a concise, helpful coding assistant."
+			}
+			s.WarmupModel(req.Model, sys)
+		} else {
+			s.WarmupAllRoles()
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "warmup_initiated",
+		"message": "KV cache prefill warmup running in background",
+	})
+}
+
+func (s *Server) WarmupAllRoles() {
+	time.Sleep(1 * time.Second) // wait for server listener and llama-server
+	log.Printf("[meepo] Initiating KV cache prefill warmup for active roles...")
+
+	roles := []struct {
+		role    string
+		model   string
+		sysText string
+	}{
+		{
+			role:    "chat",
+			model:   s.cfg.Roles.Chat.ModelID,
+			sysText: "You are a concise, helpful coding assistant and frontman.",
+		},
+		{
+			role:    "tools",
+			model:   s.cfg.Roles.Tools.ModelID,
+			sysText: "You are an autonomous operational tool execution engine.",
+		},
+		{
+			role:    "code",
+			model:   s.cfg.Roles.Code.ModelID,
+			sysText: "You are an expert code generation and patch synthesis engine.",
+		},
+	}
+
+	for _, r := range roles {
+		if r.model == "" {
+			continue
+		}
+		s.WarmupModel(r.model, r.sysText)
+	}
+	log.Printf("[meepo] KV cache prefill warmup complete.")
+}
+
+func (s *Server) WarmupModel(modelID, sysPrompt string) {
+	reqBody := map[string]interface{}{
+		"model": modelID,
+		"messages": []map[string]string{
+			{"role": "system", "content": sysPrompt},
+			{"role": "user", "content": "ready"},
+		},
+		"max_tokens": 1,
+	}
+
+	b, _ := json.Marshal(reqBody)
+	resp, err := s.httpClient.Post(
+		s.cfg.LlamaServer.BaseURL+"/chat/completions",
+		"application/json",
+		bytes.NewReader(b),
+	)
+	if err == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -125,8 +220,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":       status,
 		"orchestrator": "meepo",
 		"version":      "0.1.0",
-		"llamaOnline":  llamaOnline,
-		"vonOnline":    vonOnline,
+		"llamaOnline":    llamaOnline,
+		"vonOnline":      vonOnline,
+		"warmupPrefill":  s.cfg.Policy.WarmupPrefill,
 	})
 }
 

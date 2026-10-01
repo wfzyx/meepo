@@ -48,10 +48,16 @@ export default function meepoExtension(pi: ExtensionAPI) {
 
     if (isProxyHealthy) {
       const modeLabel = proxyManager.mode === "docker" ? "docker" : "bin";
+      const warmLabel = settings.warmupPrefill ? " 🔥" : "";
       ctx.ui.setStatus(
         "meepo",
-        ctx.ui.theme.fg("success", "🟢") + ctx.ui.theme.fg("dim", ` Meepo [${modeLabel}]`),
+        ctx.ui.theme.fg("success", "🟢") + ctx.ui.theme.fg("dim", ` Meepo [${modeLabel}${warmLabel}]`),
       );
+
+      // Background prefill Turn 1 warmup if enabled
+      if (settings.warmupPrefill) {
+        configManager.triggerWarmup(proxyManager.baseUrl);
+      }
     } else {
       ctx.ui.setStatus(
         "meepo",
@@ -108,6 +114,26 @@ export default function meepoExtension(pi: ExtensionAPI) {
         }
 
         const action = subArgs[0].toLowerCase();
+
+        if (action === "prefill" || action === "warmup") {
+          const val = subArgs[1]?.toLowerCase();
+          if (val === "on" || val === "true" || val === "1") {
+            settings.warmupPrefill = true;
+            configManager.save(settings);
+            ctx.ui.notify("KV cache prefill warmup enabled.", "info");
+            configManager.triggerWarmup(proxyManager.baseUrl);
+          } else if (val === "off" || val === "false" || val === "0") {
+            settings.warmupPrefill = false;
+            configManager.save(settings);
+            ctx.ui.notify("KV cache prefill warmup disabled.", "info");
+          } else {
+            ctx.ui.notify(
+              `KV Cache Warmup: ${settings.warmupPrefill ? "enabled" : "disabled"}. Usage: /meepo settings prefill on|off`,
+              "info",
+            );
+          }
+          return;
+        }
 
         if (action === "docker") {
           const val = subArgs[1]?.toLowerCase();
@@ -172,6 +198,17 @@ export default function meepoExtension(pi: ExtensionAPI) {
         }
 
         ctx.ui.notify("Unknown settings option. Run '/meepo settings' for interactive menu.", "warning");
+        return;
+      }
+      // ─── Subcommand: warmup / prefill ───────────────────────────────────────
+      if (sub === "warmup" || sub === "prefill") {
+        ctx.ui.notify("Triggering KV cache prefill warmup on llama-server...", "info");
+        const ok = await configManager.triggerWarmup(proxyManager.baseUrl);
+        if (ok) {
+          ctx.ui.notify("KV cache prefill warmup initiated for active roles.", "info");
+        } else {
+          ctx.ui.notify("Failed to initiate warmup. Is Meepo proxy running?", "warning");
+        }
         return;
       }
 
@@ -255,6 +292,7 @@ export default function meepoExtension(pi: ExtensionAPI) {
         `  Runner: ${proxyManager.mode} (config: ${settings.runner}, ${proxyManager.isManaged ? "managed by pi-meepo" : "external"})`,
         `  Active Pi Sessions: ${activeSessions.length}`,
         `  Upstream: ${upstreamStatus}`,
+        `  KV Cache Warmup: ${settings.warmupPrefill ? "🔥 ENABLED (auto-warmed)" : "❄️ DISABLED"}`,
         ``,
         `Active Role Models:`,
         `  💬 Chat:  ${settings.roles.chat.modelId}`,
@@ -265,9 +303,11 @@ export default function meepoExtension(pi: ExtensionAPI) {
         `Commands:`,
         `  /meepo settings               Interactive TUI settings menu`,
         `  /meepo settings docker on|off Enable or disable Docker runner`,
-        `  /meepo settings model <r> <m> Set role model (chat/tools/code/cloud)`,
-        `  /meepo settings show          Display full JSON configuration`,
-        `  /meepo start | stop | restart Control proxy process lifecycle`,
+        `  /meepo settings prefill on|off Toggle KV cache prefill warmup`,
+        `  /meepo settings model <r> <m>  Set role model (chat/tools/code/cloud)`,
+        `  /meepo settings show           Display full JSON configuration`,
+        `  /meepo warmup                  Trigger manual KV cache warmup`,
+        `  /meepo start | stop | restart  Control proxy process lifecycle`,
       ];
 
       ctx.ui.notify(lines.join("\n"), "info");

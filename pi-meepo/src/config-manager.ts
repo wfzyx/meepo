@@ -20,6 +20,7 @@ export interface MeepoSettings {
   port: number;
   host: string;
   containerName: string;
+  warmupPrefill?: boolean;
   llamaServer: {
     baseUrl: string;
     modelDir?: string;
@@ -40,6 +41,7 @@ export function getDefaultSettings(): MeepoSettings {
     port: 8081,
     host: "127.0.0.1",
     containerName: "meepo",
+    warmupPrefill: true,
     llamaServer: {
       baseUrl: "http://127.0.0.1:8080/v1",
       modelDir: "~/models",
@@ -151,6 +153,19 @@ export class ConfigManager {
       return [];
     }
   }
+  async triggerWarmup(baseUrl: string, sysPrompt?: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${baseUrl}/v1/warmup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sysPrompt ? { system_prompt: sysPrompt } : {}),
+        signal: AbortSignal.timeout(2000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
 
   async openInteractiveSettings(
     ctx: ExtensionContext,
@@ -166,9 +181,12 @@ export class ConfigManager {
     while (true) {
       const runnerEmoji = settings.runner === "docker" ? "🐳" : "⚡";
       const runnerLabel = settings.runner === "docker" ? "Docker container" : "Native Go binary";
+      const warmupEmoji = settings.warmupPrefill ? "🔥" : "❄️";
+      const warmupLabel = settings.warmupPrefill ? "ENABLED (auto-warm Turn 1)" : "DISABLED";
 
       const menu = [
         `${runnerEmoji} Runner Mode: ${runnerLabel}`,
+        `${warmupEmoji} KV Cache Warmup: ${warmupLabel}`,
         `🔌 Proxy Port: ${settings.port}`,
         `🦙 Upstream llama.cpp URL: ${settings.llamaServer.baseUrl}`,
         `💬 Chat Model: ${settings.roles.chat.modelId}`,
@@ -188,6 +206,12 @@ export class ConfigManager {
       if (choice.includes("Runner Mode")) {
         settings.runner = settings.runner === "docker" ? "binary" : "docker";
         ctx.ui.notify(`Switched runner to ${settings.runner}`, "info");
+        continue;
+      }
+
+      if (choice.includes("KV Cache Warmup")) {
+        settings.warmupPrefill = !settings.warmupPrefill;
+        ctx.ui.notify(`KV Cache Prefill Warmup ${settings.warmupPrefill ? "enabled" : "disabled"}`, "info");
         continue;
       }
 

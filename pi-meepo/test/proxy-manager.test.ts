@@ -35,10 +35,18 @@ describe("ProxyManager", () => {
     }
   });
 
+  it("finds Dockerfile in repository", () => {
+    const mgr = new ProxyManager();
+    const dockerfile = mgr.findDockerfile();
+    expect(dockerfile).not.toBeNull();
+    if (dockerfile) {
+      expect(existsSync(dockerfile)).toBe(true);
+    }
+  });
+
   it("correctly checks health of running meepo server", async () => {
     const mgr = new ProxyManager({ port: 8081 });
     const isHealthy = await mgr.checkHealth();
-    // Port 8081 was running in background from previous turns
     expect(typeof isHealthy).toBe("boolean");
   });
 });

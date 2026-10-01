@@ -92,10 +92,33 @@ export class ProxyManager {
       if (exists) {
         execSync(`docker start ${this.containerName}`, { stdio: "ignore", timeout: 5000 });
       } else {
-        // Run container
+        // Check if image exists; if not, attempt to build from Dockerfile
+        const imgExists = execSync(`docker images -q meepo:latest`, {
+          encoding: "utf-8",
+          timeout: 3000,
+        }).trim();
+
+        if (!imgExists) {
+          onStatus?.("Building Docker image 'meepo:latest'...");
+          const dockerfilePath = this.findDockerfile();
+          if (dockerfilePath) {
+            const contextDir = join(dockerfilePath, "..");
+            execSync(`docker build -t meepo:latest -f ${dockerfilePath} ${contextDir}`, {
+              stdio: "ignore",
+              timeout: 60000,
+            });
+          }
+        }
+
+        // Run container with optimal network settings
+        const isLinux = process.platform === "linux";
+        const netArgs = isLinux
+          ? `--net=host`
+          : `-p ${this.port}:8081 --add-host=host.docker.internal:host-gateway -e MEEPO_LLAMA_URL=http://host.docker.internal:8080/v1 -e MEEPO_VON_URL=http://host.docker.internal:8000/v1/systemone`;
+
         execSync(
-          `docker run -d --name ${this.containerName} -p ${this.port}:8081 meepo:latest`,
-          { stdio: "ignore", timeout: 10000 },
+          `docker run -d --name ${this.containerName} ${netArgs} meepo:latest`,
+          { stdio: "ignore", timeout: 15000 },
         );
       }
       this.managed = true;
@@ -106,6 +129,21 @@ export class ProxyManager {
     }
 
     return this.pollHealth(15, 500, onStatus);
+  }
+  findDockerfile(): string | null {
+    const candidatePaths = [
+      join(process.cwd(), "Dockerfile"),
+      join(homedir(), "Code", "personal", "meepo", "Dockerfile"),
+      join(import.meta.dirname ?? "", "..", "Dockerfile"),
+      join(import.meta.dirname ?? "", "..", "..", "Dockerfile"),
+    ];
+
+    for (const p of candidatePaths) {
+      if (existsSync(p)) {
+        return p;
+      }
+    }
+    return null;
   }
 
   findBinary(): string | null {

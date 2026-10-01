@@ -1,5 +1,6 @@
 node_modules/
 dist/
+!pi-meepo/dist/
 bin/
 *.log
 *.tgz

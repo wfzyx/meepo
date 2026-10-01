@@ -20,6 +20,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node && tsc --emitDeclarationOnly",
+    "prepublishOnly": "bun run build && bun test",
     "test": "bun test"
   },
   "peerDependencies": {

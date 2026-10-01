@@ -12,6 +12,9 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "pi-meepo/dist",
+    "pi-meepo/package.json",
+    "pi-meepo/README.md",
     "meepo.config.json",
     "README.md",
     "LICENSE"
@@ -25,7 +28,7 @@
   ],
   "pi": {
     "extensions": [
-      "./dist/index.js"
+      "./pi-meepo/dist/index.js"
     ]
   },
   "scripts": {

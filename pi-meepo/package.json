@@ -1,0 +1,32 @@
+{
+  "name": "pi-meepo",
+  "version": "0.1.0",
+  "description": "Zero-config auto-wiring and lifecycle manager for Meepo AI mesh in Pi",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "dist/index.js"
+    ]
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node && tsc --emitDeclarationOnly",
+    "test": "bun test"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

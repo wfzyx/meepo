@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -46,6 +47,7 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("/models/load", s.handleModelsLoad)
 	mux.HandleFunc("/models/unload", s.handleModelsUnload)
 	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
+	mux.HandleFunc("/v1/shutdown", s.handleShutdown)
 
 	s.httpServer = &http.Server{
 		Addr:    addr,
@@ -60,6 +62,25 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return s.httpServer.Shutdown(ctx)
 	}
 	return nil
+}
+
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":  "shutting_down",
+		"message": "Meepo proxy shutting down gracefully",
+	})
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		_ = s.Shutdown(context.Background())
+		os.Exit(0)
+	}()
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

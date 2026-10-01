@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  meepo:
+    build: .
+    container_name: meepo
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - MEEPO_HOST=0.0.0.0
+      - MEEPO_PORT=8081
+      - MEEPO_LLAMA_URL=http://host.docker.internal:8080/v1
+      - MEEPO_VON_URL=http://host.docker.internal:8000/v1/systemone
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

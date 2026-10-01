@@ -68,10 +68,10 @@ export class MeepoOrchestrator {
       },
       roles: {
         router: {
-          name: 'von-1.0',
+          name: 'von-1.3.5',
           type: 'system_one',
           endpoint: 'http://127.0.0.1:8000/v1/systemone',
-          description: 'Non-autoregressive 395M ModernBERT classifier (<30ms decisions)',
+          description: 'Non-autoregressive OptionMarker System One model (v1.3.5, <30ms decisions)',
           enabled: true,
         },
         chat: {

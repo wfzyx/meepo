@@ -3,7 +3,7 @@
  * "Divided We Stand"
  *
  * Brain Roster (Scheme 1):
- * 1. router: Von 1.0 (395M ModernBERT) - sub-30ms non-autoregressive triage & tool pruner
+ * 1. router: Von 1.3.5 (OptionMarker System One) - sub-30ms non-autoregressive triage & tool pruner
  * 2. chat:   Gemma 4 E2B-it - conversational layer, 128k context, human dialogue
  * 3. tools:  LFM 2.5 1.2B - operational tool execution puppet & bash/fs mechanics
  * 4. code:   Qwen 3.5 2B - specialized Gated Delta syntax and diff generator

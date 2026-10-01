@@ -19,7 +19,7 @@ Trying to force a single 1B–7B local model to simultaneously act as Shakespear
                                 │
                                 ▼
                ┌─────────────────────────────────┐
-               │         1. ROUTER (Von)         │  <── Non-autoregressive 395M ModernBERT
+               │         1. ROUTER (Von 1.3.5)   │  <── OptionMarker System One
                │   • Sub-30ms categorical route  │      Single forward pass, 0 KV cache
                │   • Prunes 70% of tool schemas  │
                └────────────────┬────────────────┘
@@ -47,7 +47,7 @@ Trying to force a single 1B–7B local model to simultaneously act as Shakespear
 
 | Role Key | Model | Architecture | Parameter / Quant | RAM Footprint | Execution Lane |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`router`** | **Von 1.0** | ModernBERT Encoder | 395M (FP16/OpenVINO) | ~0.8 GB | Sub-30ms intent routing & tool schema pruning |
+| **`router`** | **Von 1.3.5** | OptionMarker Architecture | v1.3.5 checkpoint | ~0.8 GB | Sub-30ms intent routing & tool schema pruning |
 | **`chat`** | **Gemma 4 E2B-it** | Dense Multimodal | ~2B (Q4_K_M ~3.1 GB) | ~3.1 GB | 128k context, native system role, human dialogue |
 | **`tools`** | **LFM 2.5** | Continuous Dynamical | 1.2B (Q4_K_M 730 MB) | ~0.73 GB | 160 tok/s prefill, tool calling, bash/fs execution |
 | **`code`** | **Qwen 3.5** | Gated Delta Network | 2B (Q4_K_M 1.28 GB) | ~1.28 GB | AST syntax, algorithm logic, pure patch generation |

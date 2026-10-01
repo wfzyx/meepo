@@ -1,6 +1,6 @@
 /**
  * @wfzyx/meepo - Intent Router & Dynamic Tool Pruner
- * Powered by Von 1.0 (Non-autoregressive 395M ModernBERT) with heuristic fallback
+ * Powered by Von 1.3.5 (OptionMarker System One) with heuristic fallback
  * Scheme 1: router, chat, tools, code, cloud
  */
 
@@ -50,7 +50,7 @@ export class MeepoRouter {
           confidence,
           allowedTools: allowed,
           prunedTools: pruned,
-          reason: `Von 1.0 single-pass classification (${Math.round(confidence * 100)}% confidence)`,
+          reason: `Von 1.3.5 single-pass classification (${Math.round(confidence * 100)}% confidence)`,
           latencyMs: Date.now() - start,
           source: 'von',
         };

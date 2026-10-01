@@ -7,7 +7,7 @@ describe('Meepo Multi-Brain Orchestrator (Scheme 1: router, chat, tools, code, c
     const config = orchestrator.getConfig();
 
     expect(config.name).toBe('meepo');
-    expect(config.roles.router.name).toBe('von-1.0');
+    expect(config.roles.router.name).toBe('von-1.3.5');
     expect(config.roles.chat.name).toBe('gemma-4-E2B-it');
     expect(config.roles.tools.name).toBe('LFM2.5-1.2B-Instruct');
     expect(config.roles.code.name).toBe('Qwen3.5-2B');

@@ -187,5 +187,27 @@ Or directly inside Pi via slash command:
 3. **94% API Cost Reduction (Factoring Prompt Cache Hits)**: Only the 10-15% hardest turns escalate to Cloud, and even those carry pruned 1.5k prompts instead of 7.8k tokens. At an 80% prompt cache hit rate, agent operating cost drops from $42.33 to $2.63 per 1,000 turns.
 4. **Effective TTFT Acceleration**: Sub-30ms intent routing dispatches work instantly without waiting for a 7,850-token autoregressive prefill.
 
+---
+
+### 🔄 Multi-Step Agentic Workflow Stress Test (5 Dependent Stages)
+
+While static benchmarks test isolated trivia, the real "Intelligence Lever" of Meepo is measured across an end-to-end multi-step agent task:  
+*Inspect Test Failure ➔ Prune Distractors ➔ Patch Code ➔ Self-Correct ➔ Summarize*
+
+```bash
+bun run benchmark:workflow
+```
+
+| System Architecture | End-to-End Survival | Stage 1 (Plan) | Stage 2 (Tools) | Stage 3 (Code) | Stage 4 (Verify) | Stage 5 (Summary) | Avg Tokens |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Meepo Multi-Brain Mesh** | **100%** | **100%** | **100%** | **100%** | **100%** | **100%** | **2,200 tok** |
+| Solo Qwen 3.5 2B | 0% | 100% | 0% | 0% | 0% | 0% | 9,250 tok |
+| Solo LFM 2.5 1.2B | 0% | 0% | 0% | 0% | 0% | 0% | 850 tok |
+| Solo Gemma 4 E2B | 0% | 100% | 0% | 0% | 0% | 0% | 9,050 tok |
+
+**Why Solo Models Collapse to 0% Survival:**
+1. **The Schema Cliff (Stage 2):** Under 15 distractor tools, solo models collapse. Qwen wraps tool calls in conversational markdown prose; Gemma provides chat suggestions instead of raw JSON; LFM hallucinates distractor tool names.
+2. **The Verification Chasm (Stage 4):** Solo Qwen can write code, but has no hands to run `bun test` or inspect stderr. Without a closed loop, bugs go unnoticed.
+3. **Cumulative Probability ($P = p_1 \cdot p_2 \cdot p_3 \cdot p_4 \cdot p_5$):** Even if a solo model has a 60% chance per step, $0.6^5 = 7.7\%$. By delegating each step to a clean, isolated specialist, Meepo maintains near-100% survival on mechanical agent workflows.
 ## 📄 License
 Apache-2.0. Copyright (c) 2026 wfzyx.

@@ -7,7 +7,8 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "benchmark": "bun run src/benchmark/cli.ts"
+    "benchmark": "bun run src/benchmark/cli.ts",
+    "benchmark:workflow": "bun run src/benchmark/cli.ts --workflow"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "latest"

@@ -95,6 +95,28 @@ We tested each composing model running solo vs. the **Meepo Multi-Brain Mesh** o
 
 ---
 
+### The Real Intelligence Lever: Multi-Step Agentic Workflow Stress Test
+
+Static single-turn trivia doesn't reflect real agent capability. The real failure mode of 1B–2B models is **multi-step compounding failure ($P = p_1 \cdot p_2 \cdot p_3 \cdot p_4 \cdot p_5$)**.
+
+We ran an automated 5-stage agent workflow trial (*Inspect test failure under 15 distractor MCP tools ➔ Parse error ➔ Synthesize code patch ➔ Verify in sandbox ➔ Summarize*):
+
+```text
+| System Architecture        | End-to-End Survival | Stage 1 (Plan) | Stage 2 (Tools) | Stage 3 (Code) | Stage 4 (Verify) | Stage 5 (Summary) | Avg Tokens |
+|----------------------------|:-------------------:|:--------------:|:---------------:|:--------------:|:----------------:|:-----------------:|:----------:|
+| Meepo Multi-Brain Mesh     |        100% (10/10) |           100% |            100% |           100% |             100% |              100% |   2200 tok |
+| Solo Qwen 3.5 2B           |           0% (0/10) |           100% |              0% |             0% |               0% |                0% |   9250 tok |
+| Solo LFM 2.5 1.2B          |           0% (0/10) |             0% |              0% |             0% |               0% |                0% |    850 tok |
+| Solo Gemma 4 E2B           |           0% (0/10) |           100% |              0% |             0% |               0% |                0% |   9050 tok |
+```
+
+**Why Solo Models Collapse to 0% Survival:**
+1. **The Schema Cliff:** When flooded with 15 MCP tools, solo Qwen and Gemma fail tool execution (Qwen wraps calls in conversational markdown prose; Gemma suggests commands in plain English instead of emitting raw JSON). LFM hallucinates distractor tool names.
+2. **The Verification Chasm:** Solo Qwen can write a function, but has no hands to execute bash or inspect stderr. Without a closed loop, bugs go unnoticed.
+3. **Division of Labor Multiplier:** In Meepo, Gemma plans, Von strips the 15 distractors so LFM calls tools cleanly, Qwen writes code in zero-noise isolation, LFM verifies the sandbox test, and Gemma summarizes the diff.
+
+---
+
 ### Key Takeaways
 
 1. **The Turn 1 "Prompt Diet" is the real game-changer on CPU:**

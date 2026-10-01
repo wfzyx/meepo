@@ -1,7 +1,10 @@
 node_modules/
 dist/
-!pi-meepo/dist/
+!extension/dist/
 bin/
 *.log
 *.tgz
+*-results.json
 .DS_Store
+.pi/
+.private/

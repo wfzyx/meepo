@@ -8,14 +8,12 @@
   "bin": {
     "meepo": "./bin/meepo"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "files": [
-    "dist",
-    "pi-meepo/dist",
-    "pi-meepo/package.json",
-    "pi-meepo/README.md",
-    "meepo.config.json",
+    "bin",
+    "extension/dist",
+    "extension/package.json",
+    "extension/README.md",
+    "core/meepo.config.json",
     "README.md",
     "LICENSE"
   ],
@@ -28,24 +26,15 @@
   ],
   "pi": {
     "extensions": [
-      "./pi-meepo/dist/index.js"
+      "./extension/dist/index.js"
     ]
   },
   "scripts": {
-    "build": "bun build src/index.ts --outfile dist/index.js --target node --external @earendil-works/* --external typebox && tsc --emitDeclarationOnly --outDir dist",
-    "prepublishOnly": "bun run build && bun test",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "benchmark": "bun run src/benchmark/cli.ts",
-    "benchmark:workflow": "bun run src/benchmark/cli.ts --workflow",
-    "start": "bun run src/cli.ts serve",
-    "compile": "bun build --compile --outfile bin/meepo src/cli.ts"
-  },
-  "dependencies": {
-    "@earendil-works/pi-ai": "latest"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "build:go": "(cd core && go build -ldflags=\"-s -w\" -o ../bin/meepo ./cmd/meepo)",
+    "build:extension": "cd extension && bun run build",
+    "build": "bun run build:extension && bun run build:go",
+    "test": "(cd extension && bun test) && (cd core && go test ./...)",
+    "start": "./bin/meepo serve"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

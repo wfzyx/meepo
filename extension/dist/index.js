@@ -97,10 +97,14 @@ class ProxyManager {
   }
   findDockerfile() {
     const candidatePaths = [
+      join(process.cwd(), "core", "Dockerfile"),
       join(process.cwd(), "Dockerfile"),
+      join(homedir(), "Code", "personal", "meepo", "core", "Dockerfile"),
       join(homedir(), "Code", "personal", "meepo", "Dockerfile"),
       join(import.meta.dirname ?? "", "..", "Dockerfile"),
-      join(import.meta.dirname ?? "", "..", "..", "Dockerfile")
+      join(import.meta.dirname ?? "", "..", "core", "Dockerfile"),
+      join(import.meta.dirname ?? "", "..", "..", "Dockerfile"),
+      join(import.meta.dirname ?? "", "..", "..", "core", "Dockerfile")
     ];
     for (const p of candidatePaths) {
       if (existsSync(p)) {
@@ -115,6 +119,7 @@ class ProxyManager {
     }
     const candidatePaths = [
       join(homedir(), ".local", "bin", "meepo"),
+      join(homedir(), "Code", "personal", "meepo", "core", "bin", "meepo"),
       join(homedir(), "Code", "personal", "meepo", "bin", "meepo"),
       "/usr/local/bin/meepo"
     ];

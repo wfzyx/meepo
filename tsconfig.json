@@ -8,6 +8,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
     "types": ["bun-types"]
   },
   "include": ["src/**/*"]

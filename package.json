@@ -2,9 +2,32 @@
   "name": "@wfzyx/meepo",
   "version": "0.1.0",
   "description": "Multi-brain local/hybrid agent orchestration for Pi: Divided We Stand",
+  "license": "Apache-2.0",
+  "author": "wfzyx",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "meepo.config.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "coding-agent",
+    "llama-server",
+    "llm-router"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
   "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build && bun test",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "benchmark": "bun run src/benchmark/cli.ts",

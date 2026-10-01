@@ -1,0 +1,22 @@
+{
+  "name": "@wfzyx/meepo",
+  "version": "0.1.0",
+  "description": "Multi-brain local/hybrid agent orchestration for Pi: Divided We Stand",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "latest"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "bun-types": "^1.4.2",
+    "typescript": "^5.6.0"
+  }
+}

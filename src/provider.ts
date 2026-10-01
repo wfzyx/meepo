@@ -16,6 +16,7 @@ import {
   type AssistantMessageEventStream,
   type Model,
   type SimpleStreamOptions,
+  type ToolCall,
   type TranscriptContext,
 } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/compat';
@@ -80,7 +81,85 @@ export function getMeepoModels(orchestrator: MeepoOrchestrator) {
 }
 
 /**
+ * Parse an inline <tool_call> JSON block from model text output when a small model
+ * leaks tool invocations into raw text deltas instead of structured API objects.
+ */
+export function extractToolCallFromText(text: string): {
+  toolCall: ToolCall;
+  cleanedText: string;
+} | null {
+  const toolCallIdx = text.indexOf('<tool_call>');
+  if (toolCallIdx === -1) return null;
+  const startBrace = text.indexOf('{', toolCallIdx);
+  if (startBrace === -1) return null;
+
+  let depth = 0;
+  let endBrace = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startBrace; i < text.length; i++) {
+    const char = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"' && !escape) {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') depth++;
+      else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          endBrace = i;
+          break;
+        }
+      }
+    }
+  }
+
+  if (endBrace !== -1) {
+    const jsonStr = text.slice(startBrace, endBrace + 1);
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.name && parsed.arguments) {
+        const fullMatchEnd = text.indexOf('</tool_call>', endBrace);
+        const cutEnd =
+          fullMatchEnd !== -1
+            ? fullMatchEnd + 12
+            : text[endBrace + 1] === '\n'
+              ? endBrace + 2
+              : endBrace + 1;
+        return {
+          toolCall: {
+            type: 'toolCall',
+            id: 'call_' + Math.random().toString(36).slice(2, 10),
+            name: parsed.name,
+            arguments:
+              typeof parsed.arguments === 'string'
+                ? JSON.parse(parsed.arguments)
+                : (parsed.arguments as Record<string, unknown>),
+          },
+          cleanedText: (text.slice(0, toolCallIdx) + text.slice(cutEnd)).trim(),
+        };
+      }
+    } catch {
+      // Ignore JSON parse errors
+    }
+  }
+  return null;
+}
+
+/**
  * Filter tool declarations on the leading system message to only the allowed tool set
+ * and prune heavy unused sections (skills, docs, distractor tool schemas) to eliminate
+ * the Turn 1 prompt prefill latency bottleneck on CPU.
  */
 export function pruneTranscriptForRole(
   context: TranscriptContext,
@@ -99,6 +178,23 @@ export function pruneTranscriptForRole(
     } else {
       delete systemMsg.toolsAdded;
     }
+
+    if (systemMsg.sections) {
+      systemMsg.sections = { ...systemMsg.sections };
+      // Prune heavy documentation and unused skill dumps (~4,000+ tokens)
+      delete systemMsg.sections.skills;
+      delete systemMsg.sections.docs;
+
+      if (prunedTools.length > 0) {
+        const toolsList = prunedTools
+          .map((t) => `- ${t.name}: ${t.description}`)
+          .join('\n');
+        systemMsg.sections.tools = `<tools>\n${toolsList}\n</tools>`;
+      } else {
+        delete systemMsg.sections.tools;
+      }
+    }
+
     messages[0] = systemMsg;
   }
 
@@ -249,6 +345,42 @@ export function streamMeepo(
         } else if (event.type === 'done') {
           event.message.model = model.id;
           event.message.responseModel = `${targetModelId} [${targetRole}]`;
+
+          // Auto-healing bridge: if a small model leaked <tool_call> into text output
+          // without structured toolCall blocks, extract and convert it into a real ToolCall event.
+          const hasToolCalls = event.message.content.some((c) => c.type === 'toolCall');
+          if (!hasToolCalls) {
+            const textBlockIndex = event.message.content.findIndex((c) => c.type === 'text');
+            if (textBlockIndex !== -1) {
+              const textBlock = event.message.content[textBlockIndex] as { type: 'text'; text: string };
+              const extracted = extractToolCallFromText(textBlock.text);
+              if (extracted) {
+                textBlock.text = extracted.cleanedText;
+                event.message.content.push(extracted.toolCall);
+                event.message.stopReason = 'toolUse';
+                event.reason = 'toolUse';
+
+                const toolIndex = event.message.content.length - 1;
+                stream.push({
+                  type: 'toolcall_start',
+                  contentIndex: toolIndex,
+                  partial: event.message,
+                });
+                stream.push({
+                  type: 'toolcall_delta',
+                  contentIndex: toolIndex,
+                  delta: JSON.stringify(extracted.toolCall.arguments),
+                  partial: event.message,
+                });
+                stream.push({
+                  type: 'toolcall_end',
+                  contentIndex: toolIndex,
+                  toolCall: extracted.toolCall,
+                  partial: event.message,
+                });
+              }
+            }
+          }
         }
         stream.push(event);
       }

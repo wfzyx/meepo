@@ -6,6 +6,7 @@ import {
   MEEPO_API_NAME,
   MEEPO_PROVIDER_ID,
   pruneTranscriptForRole,
+  extractToolCallFromText,
 } from '../src/provider';
 import { normalizeContext, getCurrentTools } from '@earendil-works/pi-ai';
 describe('Meepo Multi-Brain Orchestrator (Scheme 1: router, chat, tools, code, cloud)', () => {
@@ -113,6 +114,67 @@ describe('Meepo Multi-Brain Orchestrator (Scheme 1: router, chat, tools, code, c
 
     expect(operationalTools).toEqual(['bash', 'read', 'write', 'edit', 'undo_last_edit']);
     expect(operationalTools).not.toContain('web_search');
+  });
+
+  it('prunes sections (skills, docs, tool text) to enforce Turn 1 prompt diet', () => {
+    const rawContext = {
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an autonomous AI coding agent.',
+          sections: {
+            preamble: 'Core persona',
+            skills: '<skills>massive 3700 token dump</skills>',
+            docs: '<docs>massive 300 token dump</docs>',
+            tools: '<tools>\n- bash: Run bash\n- read: Read file\n- mcp__foo: foo\n</tools>',
+            cwd: '/home/wfzyx',
+          },
+          toolsAdded: [
+            { name: 'bash', description: 'Run bash', parameters: {} as any },
+            { name: 'read', description: 'Read file', parameters: {} as any },
+            { name: 'mcp__foo', description: 'Foo', parameters: {} as any },
+          ],
+          timestamp: 0,
+        },
+        { role: 'user', content: 'test', timestamp: 1 },
+      ],
+    } as any;
+
+    const pruned = pruneTranscriptForRole(rawContext, ['bash']);
+    const sysMsg = pruned.messages[0] as any;
+
+    expect(sysMsg.sections.skills).toBeUndefined();
+    expect(sysMsg.sections.docs).toBeUndefined();
+    expect(sysMsg.sections.tools).toContain('- bash: Run bash');
+    expect(sysMsg.sections.tools).not.toContain('mcp__foo');
+    expect(sysMsg.toolsAdded.length).toBe(1);
+    expect(sysMsg.toolsAdded[0].name).toBe('bash');
+  });
+
+  it('extracts and auto-heals leaked <tool_call> tags from small model text responses', () => {
+    const leakedOutput = `Thinking Process:
+1. Examine the Path: ~/Code/personal/mu-online seems like a likely repository.
+Next Action: Execute a bash command to list the contents of the repository.
+
+## Response
+
+<tool_call>
+{
+  "name": "bash",
+  "arguments": {
+    "command": "ls -l ~/Code/personal/mu-online"
+  }
+}
+]`;
+
+    const result = extractToolCallFromText(leakedOutput);
+    expect(result).not.toBeNull();
+    expect(result?.toolCall.type).toBe('toolCall');
+    expect(result?.toolCall.name).toBe('bash');
+    expect(result?.toolCall.arguments).toEqual({ command: 'ls -l ~/Code/personal/mu-online' });
+    expect(result?.cleanedText).toContain('Thinking Process:');
+    expect(result?.cleanedText).not.toContain('<tool_call>');
+    expect(result?.cleanedText).not.toContain('"command": "ls -l ~/Code/personal/mu-online"');
   });
 
   it('validates that Von/router explicitly strips MCP tool schemas to protect prefill latency', async () => {

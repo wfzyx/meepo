@@ -80,11 +80,20 @@ export interface MeshHealth {
   loadedLlamaModels: string[];
 }
 
+export interface ToolPruningResult {
+  allowed: string[];
+  pruned: string[];
+  mcpStripped: string[];
+  tokensSavedEstimate: number;
+}
+
 export interface RoutingDecision {
   targetRole: BrainRole;
   confidence: number;
   allowedTools?: string[];
   prunedTools?: string[];
+  mcpStripped?: string[];
+  tokensSavedEstimate?: number;
   reason: string;
   latencyMs: number;
   source: 'von' | 'heuristic';
@@ -116,6 +125,29 @@ export interface CloudConsultationResult {
   verdict: string;
   recommendedAction: string;
   architecturalRisks: string[];
+  model: string;
+  latencyMs: number;
+}
+
+export interface PromptDecompositionResult {
+  userGoal: string;
+  commandsForTools?: string[];
+  specForCode?: string;
+  summary: string;
+  model: string;
+  latencyMs: number;
+}
+
+export interface DiffSummaryRequest {
+  goal: string;
+  diff: string;
+  toolOutput?: string;
+}
+
+export interface DiffSummaryResult {
+  prose: string;
+  filesChanged: string[];
+  summaryBullets: string[];
   model: string;
   latencyMs: number;
 }

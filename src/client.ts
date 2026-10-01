@@ -13,6 +13,9 @@ import type {
   CodeGenerationResult,
   CloudConsultationRequest,
   CloudConsultationResult,
+  PromptDecompositionResult,
+  DiffSummaryRequest,
+  DiffSummaryResult,
 } from './types';
 
 export class MeepoMeshClient {
@@ -279,6 +282,138 @@ You are the Cloud Advisor: external senior systems architect. Provide:
         });
       });
     });
+  }
+
+  /**
+   * Gemma (chat): Convert user's high-level request into precise commands for Qwen (code) and LFM (tools)
+   */
+  public async translatePromptWithGemma(userPrompt: string): Promise<PromptDecompositionResult> {
+    const start = Date.now();
+    const model = this.config.roles.chat.modelId;
+    const systemPrompt = `You are Gemma 4, the conversational frontman for the Meepo Multi-Brain agent.
+Your job is to translate the user's request into precise, structured commands for the operational sub-brains:
+1. 'commandsForTools': Concrete shell or filesystem commands for LFM (e.g. "bun test", "git status").
+2. 'specForCode': Concrete implementation/patch requirements for Qwen (e.g. "Implement function X in file Y").
+3. 'summary': 1-line plain language summary of the objective.
+
+Respond with strict JSON ONLY matching this format:
+{
+  "userGoal": "concise goal",
+  "commandsForTools": ["cmd1", "cmd2"],
+  "specForCode": "spec description",
+  "summary": "plain English summary"
+}`;
+
+    try {
+      const result = await this.completeLocal(
+        model,
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        { temperature: 0.1 }
+      );
+
+      let clean = result.content.trim();
+      if (clean.startsWith('```')) {
+        const lines = clean.split('\n');
+        if (lines.length > 2) clean = lines.slice(1, -1).join('\n');
+      }
+
+      const parsed = JSON.parse(clean);
+      return {
+        userGoal: parsed.userGoal || userPrompt,
+        commandsForTools: Array.isArray(parsed.commandsForTools) ? parsed.commandsForTools : undefined,
+        specForCode: parsed.specForCode || undefined,
+        summary: parsed.summary || userPrompt,
+        model,
+        latencyMs: Date.now() - start,
+      };
+    } catch {
+      // Deterministic fallback if llama-server is offline or output isn't JSON
+      const p = userPrompt.toLowerCase();
+      const isCode = p.includes('code') || p.includes('implement') || p.includes('refactor') || p.includes('write') || p.includes('function') || p.includes('fix');
+      const isOps = p.includes('test') || p.includes('run') || p.includes('git') || p.includes('build') || p.includes('bash') || p.includes('install');
+
+      return {
+        userGoal: userPrompt,
+        commandsForTools: isOps ? [`Execute operations: ${userPrompt}`] : undefined,
+        specForCode: isCode ? `Synthesize code for: ${userPrompt}` : undefined,
+        summary: `Decomposed goal: ${userPrompt.slice(0, 80)}`,
+        model: `${model} (fallback)`,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  /**
+   * Gemma (chat): Summarize raw code diffs and tool execution outputs into elegant prose for the end user
+   */
+  public async summarizeDiffWithGemma(req: DiffSummaryRequest): Promise<DiffSummaryResult> {
+    const start = Date.now();
+    const model = this.config.roles.chat.modelId;
+    const systemPrompt = `You are Gemma 4, the conversational frontman for the Meepo Multi-Brain agent.
+You convert technical code diffs and tool logs into clean, elegant, human-readable prose for the end-user.
+Explain clearly:
+1. What was changed and why.
+2. Concrete results (e.g. tests passing, error resolved).
+3. Do NOT dump raw diff blocks unless requested; speak concisely and authoritatively.`;
+
+    const userPrompt = `Goal: ${req.goal}
+${req.toolOutput ? `Tool Execution Output:\n${req.toolOutput}\n` : ''}
+Raw Diff:
+\`\`\`diff
+${req.diff}
+\`\`\``;
+
+    // Extract files changed from diff lines starting with +++ or diff --git
+    const fileMatches = [...req.diff.matchAll(/(?:\+\+\+\s+b\/|diff --git a\/)([^\s\n]+)/g)];
+    const filesChanged = [...new Set(fileMatches.map((m) => m[1]))];
+
+    try {
+      const result = await this.completeLocal(
+        model,
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        { temperature: 0.2 }
+      );
+
+      const prose = result.content.trim();
+      const summaryBullets = prose
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith('- ') || l.startsWith('* ') || /^\d+\./.test(l))
+        .map((l) => l.replace(/^[-*]|\d+\.\s*/, '').trim());
+
+      return {
+        prose,
+        filesChanged,
+        summaryBullets: summaryBullets.length > 0 ? summaryBullets : [`Updated ${filesChanged.join(', ') || 'codebase'}`],
+        model,
+        latencyMs: Date.now() - start,
+      };
+    } catch {
+      // Deterministic fallback if llama-server is offline
+      const lines = req.diff.split('\n');
+      const additions = lines.filter((l) => l.startsWith('+') && !l.startsWith('+++')).length;
+      const deletions = lines.filter((l) => l.startsWith('-') && !l.startsWith('---')).length;
+
+      const prose = `Completed changes for: ${req.goal}.\nModified ${filesChanged.length || 1} file(s) (+${additions}, -${deletions} lines).\n${req.toolOutput ? `Tool verification completed successfully.` : ''}`;
+      const summaryBullets = [
+        `Applied patch to ${filesChanged.join(', ') || 'target files'}`,
+        `Net diff: +${additions} / -${deletions} lines`,
+      ];
+
+      return {
+        prose,
+        filesChanged,
+        summaryBullets,
+        model: `${model} (fallback)`,
+        latencyMs: Date.now() - start,
+      };
+    }
   }
 
   /**

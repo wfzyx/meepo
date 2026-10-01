@@ -4,7 +4,7 @@
  * Scheme 1: router, chat, tools, code, cloud
  */
 
-import type { MeepoConfig, RoutingDecision, BrainRole } from './types';
+import type { MeepoConfig, RoutingDecision, BrainRole, ToolPruningResult } from './types';
 import type { MeepoMeshClient } from './client';
 
 export class MeepoRouter {
@@ -43,13 +43,15 @@ export class MeepoRouter {
         const targetRole = vonResult.decision as BrainRole;
         const confidence = vonResult.probabilities[targetRole] ?? 0.85;
 
-        const { allowed, pruned } = this.calculateToolPruning(targetRole, availableTools);
+        const pruning = this.calculateToolPruning(targetRole, availableTools);
 
         return {
           targetRole,
           confidence,
-          allowedTools: allowed,
-          prunedTools: pruned,
+          allowedTools: pruning.allowed,
+          prunedTools: pruning.pruned,
+          mcpStripped: pruning.mcpStripped,
+          tokensSavedEstimate: pruning.tokensSavedEstimate,
           reason: `Von 1.3.5 single-pass classification (${Math.round(confidence * 100)}% confidence)`,
           latencyMs: Date.now() - start,
           source: 'von',
@@ -59,13 +61,15 @@ export class MeepoRouter {
 
     // 2. Fast Heuristic Fallback if Von is offline
     const heuristicTarget = this.heuristicClassify(userPrompt);
-    const { allowed, pruned } = this.calculateToolPruning(heuristicTarget, availableTools);
+    const pruning = this.calculateToolPruning(heuristicTarget, availableTools);
 
     return {
       targetRole: heuristicTarget,
       confidence: 0.7,
-      allowedTools: allowed,
-      prunedTools: pruned,
+      allowedTools: pruning.allowed,
+      prunedTools: pruning.pruned,
+      mcpStripped: pruning.mcpStripped,
+      tokensSavedEstimate: pruning.tokensSavedEstimate,
       reason: 'Rule-based heuristic pattern match (Von offline)',
       latencyMs: Date.now() - start,
       source: 'heuristic',
@@ -128,9 +132,20 @@ export class MeepoRouter {
   public calculateToolPruning(
     role: BrainRole,
     availableTools: string[]
-  ): { allowed: string[]; pruned: string[] } {
+  ): ToolPruningResult {
+    const isMcp = (name: string) =>
+      name.startsWith('mcp__') ||
+      name.startsWith('mcp_') ||
+      name === 'mcp' ||
+      name === 'mcpScript';
+
     if (!this.config.policy.autoPruneTools || availableTools.length === 0) {
-      return { allowed: availableTools, pruned: [] };
+      return {
+        allowed: availableTools,
+        pruned: [],
+        mcpStripped: [],
+        tokensSavedEstimate: 0,
+      };
     }
 
     let essentialTools: Set<string>;
@@ -158,7 +173,9 @@ export class MeepoRouter {
 
     const allowed = availableTools.filter((t) => essentialTools.has(t));
     const pruned = availableTools.filter((t) => !essentialTools.has(t));
+    const mcpStripped = availableTools.filter((t) => isMcp(t) && !essentialTools.has(t));
+    const tokensSavedEstimate = pruned.length * 350;
 
-    return { allowed, pruned };
+    return { allowed, pruned, mcpStripped, tokensSavedEstimate };
   }
 }

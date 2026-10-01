@@ -14,6 +14,9 @@ import type {
   CodeGenerationResult,
   CloudConsultationRequest,
   CloudConsultationResult,
+  PromptDecompositionResult,
+  DiffSummaryRequest,
+  DiffSummaryResult,
 } from './types';
 import { MeepoMeshClient } from './client';
 import { MeepoRouter } from './router';
@@ -139,6 +142,14 @@ export class MeepoOrchestrator {
     piSubagent?: (args: any) => Promise<any>
   ): Promise<CloudConsultationResult> {
     return this.client.consultCloud(req, piSubagent);
+  }
+
+  public async translatePromptWithGemma(prompt: string): Promise<PromptDecompositionResult> {
+    return this.client.translatePromptWithGemma(prompt);
+  }
+
+  public async summarizeDiffWithGemma(req: DiffSummaryRequest): Promise<DiffSummaryResult> {
+    return this.client.summarizeDiffWithGemma(req);
   }
 
   /**

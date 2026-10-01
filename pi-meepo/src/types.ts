@@ -5,6 +5,10 @@ export interface ExtensionUIContext {
     fg: (color: string, text: string) => string;
     bg?: (color: string, text: string) => string;
   };
+  select?: (title: string, options: string[], opts?: any) => Promise<string | undefined>;
+  input?: (title: string, defaultValue?: string, opts?: any) => Promise<string | undefined>;
+  confirm?: (title: string, defaultValue?: boolean, opts?: any) => Promise<boolean | undefined>;
+  [key: string]: any;
 }
 
 export interface ExtensionContext {

@@ -134,8 +134,12 @@ func LoadConfig(customPath string) (*Config, error) {
 	if targetPath == "" {
 		// check cwd and executable dir
 		candidates := []string{
+			".pi/meepo.json",
 			"meepo.config.json",
 			"../meepo.config.json",
+		}
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			candidates = append(candidates, filepath.Join(home, ".pi", "agent", "meepo.json"))
 		}
 		if exe, err := os.Executable(); err == nil {
 			candidates = append(candidates, filepath.Join(filepath.Dir(exe), "meepo.config.json"))

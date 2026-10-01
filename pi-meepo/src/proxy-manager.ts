@@ -134,8 +134,8 @@ export class ProxyManager {
     const candidatePaths = [
       join(process.cwd(), "Dockerfile"),
       join(homedir(), "Code", "personal", "meepo", "Dockerfile"),
-      join(import.meta.dirname ?? "", "..", "Dockerfile"),
-      join(import.meta.dirname ?? "", "..", "..", "Dockerfile"),
+      join((import.meta as any).dirname ?? "", "..", "Dockerfile"),
+      join((import.meta as any).dirname ?? "", "..", "..", "Dockerfile"),
     ];
 
     for (const p of candidatePaths) {

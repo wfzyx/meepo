@@ -56,6 +56,21 @@ pi -e ./pi-meepo
 ### `/meepo`
 Shows proxy status, active Pi sessions, upstream health (`llama-server` and `von`), and runner mode.
 
+### `/meepo settings`
+Opens an interactive TUI settings menu with arrow-key navigation to configure:
+- **Runner mode**: Toggle between Docker container and native Go binary
+- **Port**: Set proxy port (default: 8081)
+- **Upstream llama.cpp URL**: Configure llama-server address
+- **Local role models**: Pick discovered models from `llama-server` for Chat (`gemma-4-E2B-it`), Tools (`LFM2.5-1.2B-Instruct`), and Code (`Qwen3.5-2B`)
+- **Von Router & Cloud**: Configure Von System One endpoint and Cloud escalation model
+- **Save & Restart**: Automatically saves to `~/.pi/agent/meepo.json` (or `.pi/meepo.json`) and restarts the proxy
+
+Non-interactive subcommands:
+- `/meepo settings docker on|off` — Toggle Docker runner
+- `/meepo settings model <chat|tools|code|cloud> <modelId>` — Configure role model
+- `/meepo settings port <number>` — Change proxy port
+- `/meepo settings llama <url>` — Change upstream llama.cpp URL
+- `/meepo settings show` — Print current JSON configuration
 ### `/meepo start`
 Manually starts the Meepo proxy or container if stopped.
 

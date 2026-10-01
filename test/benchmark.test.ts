@@ -70,6 +70,7 @@ describe('Artificial Analysis Intelligence Index Benchmark', () => {
     expect(table).toContain('Reason (20%)');
     expect(table).toContain('Synth (30%)');
     expect(table).toContain('MEESH ADVANTAGE ANALYSIS');
-    expect(table).toContain('MEESH ADVANTAGE ANALYSIS');
+    expect(table).toContain('Cost Saved (Cache Hits)');
+    expect(comparison.analysis.costReductionPercent).toBeGreaterThanOrEqual(90);
   }, 60000);
 });

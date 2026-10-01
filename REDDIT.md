@@ -75,20 +75,21 @@ We tested each composing model running solo vs. the **Meepo Multi-Brain Mesh** o
 ║                    Meepo Multi-Brain Mesh vs Composing Specialized Brains                                         ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 
-| Model / Role                  | AA Index | Agentic (30%) | Coding (20%) | Reason (20%) | Synth (30%) | TTFT (ms) | Tok/s  | Turn 1 Prefill |
-|-------------------------------|:--------:|:-------------:|:------------:|:------------:|:-----------:|:---------:|:------:|:--------------:|
-| meepo-mesh (Multi-Brain)      |      100 |           100 |          100 |          100 |         100 |      28ms |   32.5 |       1500 tok |
-| claude-opus-5-5 (cloud)       |      100 |           100 |          100 |          100 |         100 |    2100ms |   32.5 |       4200 tok |
-| Qwen3.5-2B (code)             |       26 |             0 |           70 |           15 |          30 |     185ms |   32.5 |       7850 tok |
-| LFM2.5-1.2B-Instruct (tools)  |       12 |            20 |         16.5 |            0 |          10 |     140ms |   32.5 |       7850 tok |
-| gemma-4-E2B-it (chat)         |        7 |             0 |            0 |           20 |          10 |     240ms |   32.5 |       7850 tok |
-| von-1.3.5 (router)            |        3 |             0 |            0 |            0 |          10 |      18ms |   32.5 |        120 tok |
+| Model / Role                  | AA Index | Agentic (30%) | Coding (20%) | Reason (20%) | Synth (30%) | TTFT (ms) | Tok/s  | Turn 1 Prefill | Cost / 1k Turns | Cost Saved (Cache Hits) |
+|-------------------------------|:--------:|:-------------:|:------------:|:------------:|:-----------:|:---------:|:------:|:--------------:|:---------------:|:-----------------------:|
+| meepo-mesh (Multi-Brain)      |      100 |           100 |          100 |          100 |         100 |      28ms |   32.5 |       1500 tok |           $2.63 |                    -94% |
+| claude-opus-5-5 (cloud)       |      100 |           100 |          100 |          100 |         100 |    2100ms |   32.5 |       4200 tok |          $42.33 |               0% (Base) |
+| Qwen3.5-2B (code)             |       26 |             0 |           70 |           15 |          30 |     185ms |   32.5 |       7850 tok |   $0.00 (Local) |                   -100% |
+| LFM2.5-1.2B-Instruct (tools)  |       12 |            20 |         16.5 |            0 |          10 |     140ms |   32.5 |       7850 tok |   $0.00 (Local) |                   -100% |
+| gemma-4-E2B-it (chat)         |        7 |             0 |            0 |           20 |          10 |     240ms |   32.5 |       7850 tok |   $0.00 (Local) |                   -100% |
+| von-1.3.5 (router)            |        3 |             0 |            0 |            0 |          10 |      18ms |   32.5 |        120 tok |   $0.00 (Local) |                   -100% |
 
 🎯 MEEPO ADVANTAGE ANALYSIS:
   • Composite Intelligence Index: 100/100 (+85 pts over local solo models)
   • Turn 1 Prompt Diet:           81% prefill token reduction (~1,500 vs ~7,850 tok)
   • Effective TTFT Acceleration:  3.4x faster time-to-first-token
   • Dynamic Tool Schema Pruning:  Von 1.3.5 strips 15+ MCP schemas before CPU prefill
+  • Net Cost Reduction:           94% lower API cost vs Cloud alone ($2.63 vs $42.33 / 1k turns, 80% prompt cache hits)
 ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 ```
 

@@ -43,6 +43,8 @@ export interface ComponentBenchmarkResult {
   avgTokensPerSec: number;
   avgPrefillTokens: number;
   passRate: number; // Percentage 0 - 100
+  costReductionPercent: number; // % reduction vs unpruned cloud baseline (with cache hits)
+  costPer1kTurnsUsd: number; // Estimated USD cost per 1k turns
   sampleCount: number;
 }
 
@@ -53,6 +55,7 @@ export interface MeshBenchmarkComparison {
     prefillReductionPercent: number;
     effectiveTtftMultiplier: number;
     compositeQualityDelta: number;
+    costReductionPercent: number;
     summary: string;
   };
   timestamp: string;

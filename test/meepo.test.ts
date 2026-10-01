@@ -155,7 +155,7 @@ describe('Meepo Multi-Brain Orchestrator (Scheme 1: router, chat, tools, code, c
     expect(codeDecision.allowedTools).toContain('edit');
 
     // 3. Triage an operational prompt -> tools role
-    const toolsDecision = await orchestrator.routeTurn('run bun test and inspect failures', toolsWithMcp);
+    const toolsDecision = await orchestrator.routeTurn('run bash command ps aux and check disk usage', toolsWithMcp);
     expect(toolsDecision.targetRole).toBe('tools');
     expect(toolsDecision.mcpStripped).toContain('mcp__slack__post_message');
     expect(toolsDecision.allowedTools).not.toContain('mcp__slack__post_message');

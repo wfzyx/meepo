@@ -106,21 +106,28 @@ export class MeepoMeshClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'choice',
           state,
-          choices,
+          questions: {
+            intent: {
+              type: 'choice',
+              instructions: 'Determine which agent role should handle this user request',
+              criteria: choices,
+            },
+          },
         }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
 
       if (!res.ok) return null;
-      const data = (await res.json()) as { choice?: string; probabilities?: Record<string, number> };
-      if (!data.choice) return null;
+      const data = (await res.json()) as any;
+      const ans = data?.answers?.intent || data?.answers?.choice || data;
+      const choice = ans?.choice;
+      if (!choice) return null;
 
       return {
-        decision: data.choice,
-        probabilities: data.probabilities || {},
+        decision: choice,
+        probabilities: ans?.probabilities || {},
         latencyMs: Date.now() - start,
       };
     } catch {

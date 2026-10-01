@@ -33,7 +33,7 @@ export class MeepoRouter {
     if (this.config.roles.router.enabled) {
       const choices = {
         chat: 'Conversational chit-chat, high-level question, explanation, general synthesis',
-        tools: 'Terminal/shell command execution, filesystem exploration, file management, system administration',
+        tools: 'Terminal shell command execution, running command-line tools, bash scripts, system administration',
         code: 'Writing code, refactoring a function, implementing an algorithm, syntax bug fix',
         cloud: 'Complex architectural dispute, concurrency race, deadlock, repeated failure, deep design review',
       };

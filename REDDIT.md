@@ -146,4 +146,6 @@ bun run benchmark --quick
 /meepo benchmark
 ```
 
+> **Clean-Room Testing Note:** When testing the agent mesh inside Pi or any agent harness, always run with memory and session replays disabled (e.g. `pi --no-extensions --no-session`). This ensures the small models are genuinely executing the tasks rather than pattern-matching historical diffs or memory files.
+
 Would love to hear how others are handling Turn 1 prefill latency for local coding agents on low-resource machines!

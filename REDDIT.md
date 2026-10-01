@@ -1,53 +1,39 @@
-# Why solo 2B models suck as coding agents (and how 4 of them in 5.6GB RAM actually survive)
+# Why solo 2B models suck as coding agents (and how 4 of them in 5.6GB RAM actually finish tasks)
 
-If you've ever tried pointing a coding agent harness at a local 2B model on a laptop CPU, you know the routine:
-1. The harness injects 15 MCP tools and a huge system prompt (~8,000 tokens).
-2. Your CPU spends 3 minutes just calculating Turn 1 prefill, hitting client timeouts.
-3. If it does answer, the model wraps its JSON tool call in conversational markdown or hallucinates a parameter, completely derailing the task.
+### The Issue
+If you point a coding agent (Pi, Claude Code, Aider) at a local 2B model on a laptop CPU, it fails immediately:
+1. **Turn 1 prefill is too slow:** The harness injects system prompts and 15 MCP tool schemas (~8,000 tokens). On an Intel i5 CPU, that takes 3 minutes just to compute KV cache, hitting timeouts before the model even starts typing.
+2. **Small models choke on tool schemas:** When a 2B model sees 15 tool definitions, it hallucinates parameters or wraps JSON in conversational markdown instead of calling the tool.
+3. **No self-correction:** A model that writes code can't execute tests or inspect compiler stderr on its own.
 
-Single 2B models make terrible decathletes. A model tuned for code syntax chokes on tool-calling under 15 distractor schemas, and a model tuned for chat can't write a clean regex.
+### The Idea
+Instead of running one model that tries to do chat, tools, and code all at once, split the work across 4 small models running warm in memory (~5.6GB RAM total):
 
-We stopped trying to make one 2B model do everything. We built **Meepo** — a local multi-brain mesh that runs 4 tiny models warm in **5.6GB of RAM on an Intel i5 laptop (CPU-only, zero VRAM)**.
+1. **Router (Von 1.3.5 / ModernBERT, 395M):** Runs in <30ms on CPU. It checks the user prompt and strips all unused tool schemas before prefill. Turn 1 prompt drops from 7,850 to 1,500 tokens (81% reduction). TTFT drops from 7.5s to 700ms.
+2. **Chat (Gemma 4 E2B, 128k context):** Handles conversation and planning.
+3. **Tools (LFM 2.5 1.2B):** Only gets the 2 tools it needs. Runs `bash`, `read`, and `git`.
+4. **Code (Qwen 3.5 2B):** Generates code patches in isolation with zero tool schemas in its prompt.
+5. **Cloud (Claude Opus 5.5 / Gemini Flash):** Opt-in fallback for deadlocks and complex architecture.
 
----
+To the agent harness, it registers as a standard model provider (`/model meepo/mesh`), so it looks like a single fast model.
 
-### The Trick: An Assembly Line with a 20ms Bouncer
-
-Instead of one model doing all the heavy lifting:
-
-1. **The Bouncer (`router` - Von 1.3.5 / ModernBERT, 395M):** A non-autoregressive classifier. In **<30ms on CPU** (0 token generation, 0 KV cache), it identifies what the turn needs and **strips 15+ irrelevant tool schemas out of the prompt**. Turn 1 prefill drops from 7,850 to 1,500 tokens (**81% diet**). TTFT drops from 7.5s to 706ms.
-2. **The Planner (`chat` - Gemma 4 E2B, 128k context):** Handles user dialogue, decomposes goals, and turns terminal logs into plain English.
-3. **The Hands (`tools` - LFM 2.5 1.2B):** Native tool-calling model. Only gets the 2 or 3 tools it needs. Executes `bash`, `read`, and `git` with zero schema distractions.
-4. **The Engine (`code` - Qwen 3.5 2B):** Generates surgical code patches in complete isolation. Zero tool schemas in its prompt — just the code context and the compiler error.
-5. **The Escalation (`cloud` - Claude Opus 5.5 / Gemini Flash):** Opt-in fallback strictly reserved for concurrency deadlocks, distributed race conditions, or when local attempts loop twice.
-
-It registers as a native provider in [Pi](https://github.com/earendil-works/pi) (`/model meepo/mesh`). The harness thinks it's talking to a single ultra-fast model.
-
----
-
-### Cold Numbers: Solo Qwen 2B vs Meepo vs Claude Opus
-
-Tested on an Intel Core i5-1135G7 (4 cores / 8 threads, CPU-only):
+### The Numbers
+Tested on an Intel Core i5-1135G7 (4 cores / 8 threads, CPU-only, no GPU):
 
 | Capability Tier | Solo Qwen 3.5 2B | Meepo (100% Local) | Meepo (Hybrid + Cloud) | Claude Opus 5.5 Solo |
 | :--- | :---: | :---: | :---: | :---: |
-| **Mechanical Tool Calling** *(15 MCP schemas)* | ❌ **0%** *(markdown spam)* | 🟢 **100%** *(distractors pruned)* | 🟢 **100%** | 🟢 **98%** |
-| **Single-File Syntax** *(Quickselect / AST)* | 🟢 **70%** | 🟢 **75%** *(zero-noise context)* | 🟢 **75%** | 🟢 **95%** |
-| **5-Stage Workflow Survival** *(test ➔ patch ➔ verify)* | ❌ **0%** *(dies at Stage 2)* | 🟢 **100%** *(assembly line)* | 🟢 **100%** | 🟢 **92%** |
-| **Closed-Loop Self-Fix** *(Pass@2 via test feedback)* | ❌ **0%** *(no hands)* | 🟢 **85%** *(LFM tests + Qwen fixes)* | 🟢 **85%** | 🟢 **95%** |
-| **Deep Architecture & Deadlocks** | ❌ **0%** | ❌ **10%** *(hard ceiling)* | 🟢 **95%** *(routes to Opus)* | 🟢 **95%** |
-| **Turn 1 TTFT Latency** *(Intel i5 CPU)* | 🐢 **7,500 ms** | ⚡ **706 ms** *(81% prompt diet)* | ⚡ **706 ms** | ⏱️ **2,100 ms** |
-| **Cost per 1,000 Turns** *(80% cache hit rate)* | **$0.00** | **$0.00** | **$2.63** *(-94%)* | **$42.33** *(baseline)* |
+| **Tool Calling** *(15 MCP schemas)* | ❌ 0% *(wraps JSON in prose)* | 🟢 100% *(schemas pruned)* | 🟢 100% | 🟢 98% |
+| **Single-File Code** *(Quickselect / AST)* | 🟢 70% | 🟢 75% | 🟢 75% | 🟢 95% |
+| **5-Stage Workflow Survival** *(test ➔ patch ➔ verify)* | ❌ 0% *(fails at stage 2)* | 🟢 100% | 🟢 100% | 🟢 92% |
+| **Closed-Loop Fix** *(Pass@2 via test feedback)* | ❌ 0% *(no execution loop)* | 🟢 85% | 🟢 85% | 🟢 95% |
+| **Deadlocks & Deep Architecture** | ❌ 0% | ❌ 10% *(hard ceiling)* | 🟢 95% *(routes to Opus)* | 🟢 95% |
+| **Turn 1 Latency (Intel i5 CPU)** | 🐢 7,500 ms | ⚡ 706 ms | ⚡ 706 ms | ⏱️ 2,100 ms |
+| **Cost per 1k Turns** *(80% cache hit)* | $0.00 | $0.00 | $2.63 | $42.33 |
 
----
+Four 2B models obviously don't replace Opus on hard architectural problems (10% score). But for the 80% of routine agent chores (grepping files, checking git status, fixing typos, running tests), it runs locally at $0 with sub-second latency instead of burning cloud credits.
 
-### The Reality Check
+### Feedback?
+- Has anyone else tried dynamic tool pruning before prefill to fix local CPU latency?
+- What are people using for local routing between small models?
 
-Can four 2B models match Claude Opus on frontier reasoning? **No.** On distributed consensus and multi-threaded deadlocks, local models score 10%. Anyone claiming 2B models replace Opus on deep software architecture is selling snake oil.
-
-The real unlock is **the 80/20 rule of coding agents**: 80% of agent turns are boring, mechanical chores (inspecting files, running git commands, checking tests, writing straightforward functions). 
-
-Solo 2B models collapse on those chores because of prompt bloat and lack of execution loops. Meepo handles the chores locally for **$0.00 and sub-second latency**, and only calls the cloud when the problem actually demands a 300B brain.
-
-Repo & reproduction scripts: [https://github.com/wfzyx/meepo](https://github.com/wfzyx/meepo)
-Runs on `bun` + `llama-server`.
+Code and setup: https://github.com/wfzyx/meepo (runs with `bun` + `llama-server`)

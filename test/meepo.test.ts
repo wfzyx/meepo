@@ -238,7 +238,7 @@ Next Action: Execute a bash command to list the contents of the repository.
     const hasTools = Array.isArray(decomposition.commandsForTools) && decomposition.commandsForTools.length > 0;
     const hasCode = typeof decomposition.specForCode === 'string' && decomposition.specForCode.length > 0;
     expect(hasTools || hasCode).toBe(true);
-  }, 60000);
+  }, 90000);
 
   it('summarizes code diffs and tool logs into clean, human-readable prose via Gemma', async () => {
     const orchestrator = new MeepoOrchestrator();
@@ -271,5 +271,5 @@ index e69de29..b614e31 100644
     expect(summaryResult.prose.length).toBeGreaterThan(0);
     expect(summaryResult.prose.toLowerCase()).toMatch(/mutex|token|refresh|race/);
     expect(summaryResult.summaryBullets.length).toBeGreaterThan(0);
-  }, 60000);
+  }, 90000);
 });

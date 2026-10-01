@@ -5,6 +5,9 @@
   "license": "Apache-2.0",
   "author": "wfzyx",
   "type": "module",
+  "bin": {
+    "meepo": "./bin/meepo"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -31,7 +34,9 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "benchmark": "bun run src/benchmark/cli.ts",
-    "benchmark:workflow": "bun run src/benchmark/cli.ts --workflow"
+    "benchmark:workflow": "bun run src/benchmark/cli.ts --workflow",
+    "start": "bun run src/cli.ts serve",
+    "compile": "bun build --compile --outfile bin/meepo src/cli.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "latest"

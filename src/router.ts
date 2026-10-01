@@ -32,17 +32,21 @@ export class MeepoRouter {
     // 1. Try fast non-autoregressive classification with Von
     if (this.config.roles.router.enabled) {
       const choices = {
-        chat: 'Conversational chit-chat, high-level question, explanation, general synthesis',
-        tools: 'Terminal shell command execution, running command-line tools, bash scripts, system administration',
-        code: 'Writing code, refactoring a function, implementing an algorithm, syntax bug fix',
-        cloud: 'Complex architectural dispute, concurrency race, deadlock, repeated failure, deep design review',
+        chat: 'General conversation, chit-chat, asking to retry, follow-up clarification, explanation',
+        tools: 'Terminal shell command execution, finding files, searching directories, running bash, command-line operations',
+        code: 'Writing code, editing files, refactoring a function, implementing an algorithm, syntax bug fix',
+        cloud: 'Hard architectural system redesign, deadlock analysis, multi-threaded race condition, memory leak investigation',
       };
 
       const vonResult = await this.client.decideVon(userPrompt, choices);
       if (vonResult && vonResult.decision) {
-        const targetRole = vonResult.decision as BrainRole;
+        let targetRole = vonResult.decision as BrainRole;
         const confidence = vonResult.probabilities[targetRole] ?? 0.85;
 
+        // Guardrail: Never escalate to cloud on low confidence (< 0.70)
+        if (targetRole === 'cloud' && confidence < 0.70) {
+          targetRole = 'chat';
+        }
         const pruning = this.calculateToolPruning(targetRole, availableTools);
 
         return {

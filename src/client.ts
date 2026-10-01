@@ -253,8 +253,17 @@ You are the Cloud Advisor: external senior systems architect. Provide:
     return new Promise((resolve, reject) => {
       const proc = spawn(
         'pi',
-        ['--mode', 'json', '-p', '--no-session', '--model', cloudConfig.modelId, prompt],
-        { stdio: ['ignore', 'pipe', 'pipe'] }
+        [
+          '--mode',
+          'json',
+          '-p',
+          '--no-session',
+          '--no-extensions',
+          '--no-tools',
+          '--model',
+          cloudConfig.modelId,
+          prompt,
+        ],
       );
 
       let stdout = '';
@@ -267,11 +276,13 @@ You are the Cloud Advisor: external senior systems architect. Provide:
           return reject(new Error(`Cloud consultation failed (code ${code}): ${stderr}`));
         }
 
-        let verdict = stdout.trim();
-        try {
-          const lines = stdout.trim().split('\n');
-          for (const line of lines) {
-            const parsed = JSON.parse(line);
+        let verdict = '';
+        const lines = stdout.trim().split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const parsed = JSON.parse(trimmed);
             if (parsed.type === 'message' && parsed.message?.role === 'assistant') {
               const textParts = (parsed.message.content || [])
                 .filter((p: any) => p.type === 'text')
@@ -280,8 +291,15 @@ You are the Cloud Advisor: external senior systems architect. Provide:
                 verdict = textParts.join('\n');
               }
             }
+          } catch {
+            // Ignore non-JSON or partial stream lines
           }
-        } catch {}
+        }
+
+        // If structured parsing did not find assistant text, strip JSON envelopes
+        if (!verdict) {
+          verdict = stdout.replace(/\{"type":[\s\S]*?\}/g, '').trim() || stdout.trim();
+        }
 
         resolve({
           verdict,
@@ -321,9 +339,8 @@ Respond with strict JSON ONLY matching this format:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        { temperature: 0.1, maxTokens: 128 }
+        { temperature: 0.1, maxTokens: 48 }
       );
-
       let clean = result.content.trim();
       if (clean.startsWith('```')) {
         const lines = clean.split('\n');
@@ -387,9 +404,8 @@ ${req.diff}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        { temperature: 0.2, maxTokens: 128 }
+        { temperature: 0.2, maxTokens: 48 }
       );
-
       const prose = result.content.trim();
       const summaryBullets = prose
         .split('\n')

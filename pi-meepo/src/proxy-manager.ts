@@ -1,7 +1,7 @@
 import { spawn, execSync, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 export interface ProxyManagerOptions {
   host?: string;
@@ -194,6 +194,11 @@ export class ProxyManager {
 
       this.spawnedProcess = child;
       this.managed = true;
+
+      // Save PID to disk for multi-session and runner-switch recovery
+      if (child.pid) {
+        this.writePidFile(child.pid);
+      }
     } catch (err) {
       onStatus?.(`Failed to spawn Meepo binary: ${(err as Error).message}`);
       return false;
@@ -218,41 +223,167 @@ export class ProxyManager {
     return false;
   }
 
+  getPidFilePath(): string {
+    return join(tmpdir(), "meepo-sessions", "meepo-proxy.pid");
+  }
+
+  private writePidFile(pid: number): void {
+    try {
+      const pidFile = this.getPidFilePath();
+      const dir = join(pidFile, "..");
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync(pidFile, String(pid), "utf-8");
+    } catch {}
+  }
+
+  private cleanupPidFile(): void {
+    try {
+      const pidFile = this.getPidFilePath();
+      if (existsSync(pidFile)) {
+        unlinkSync(pidFile);
+      }
+    } catch {}
+  }
+
+  private stopDockerContainer(onStatus?: (msg: string) => void): void {
+    try {
+      // Check if container is running
+      const running = execSync(
+        `docker inspect -f '{{.State.Running}}' ${this.containerName} 2>/dev/null || true`,
+        { encoding: "utf-8", timeout: 2000 },
+      ).trim();
+
+      if (running === "true") {
+        onStatus?.(`Stopping Docker container '${this.containerName}'...`);
+        execSync(`docker stop -t 2 ${this.containerName} 2>/dev/null || true`, {
+          stdio: "ignore",
+          timeout: 6000,
+        });
+      }
+    } catch {
+      // Docker command failed or docker not installed
+    }
+  }
+
+  private killNativeProcesses(onStatus?: (msg: string) => void): void {
+    const pidsToKill = new Set<number>();
+
+    // 1. In-memory spawned process
+    if (this.spawnedProcess && this.spawnedProcess.pid) {
+      pidsToKill.add(this.spawnedProcess.pid);
+    }
+
+    // 2. Read PID file from disk (handles previous sessions and runner switches)
+    try {
+      const pidFile = this.getPidFilePath();
+      if (existsSync(pidFile)) {
+        const saved = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+        if (!isNaN(saved) && saved > 0 && saved !== process.pid) {
+          pidsToKill.add(saved);
+        }
+      }
+    } catch {}
+
+    // 3. Find any processes listening on the target port via fuser
+    try {
+      const fuserOut = execSync(`fuser ${this.port}/tcp 2>/dev/null || true`, {
+        encoding: "utf-8",
+        timeout: 1500,
+      }).trim();
+      if (fuserOut) {
+        for (const token of fuserOut.split(/\s+/)) {
+          const p = parseInt(token.trim(), 10);
+          if (!isNaN(p) && p > 0 && p !== process.pid) {
+            pidsToKill.add(p);
+          }
+        }
+      }
+    } catch {}
+
+    // 4. Find any running 'meepo serve' processes via pgrep
+    try {
+      const pgrepOut = execSync(`pgrep -f "meepo serve" 2>/dev/null || true`, {
+        encoding: "utf-8",
+        timeout: 1500,
+      }).trim();
+      if (pgrepOut) {
+        for (const line of pgrepOut.split(/\s+/)) {
+          const p = parseInt(line.trim(), 10);
+          if (!isNaN(p) && p > 0 && p !== process.pid) {
+            pidsToKill.add(p);
+          }
+        }
+      }
+    } catch {}
+
+    // Send SIGTERM to all identified PIDs
+    for (const pid of pidsToKill) {
+      try {
+        process.kill(pid, 0); // check if alive
+        onStatus?.(`Terminating native Meepo process (PID ${pid})...`);
+        process.kill(pid, "SIGTERM");
+      } catch {}
+    }
+
+    // Allow 200ms grace period, then SIGKILL any stubborn survivors
+    const survivors = Array.from(pidsToKill).filter((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+    if (survivors.length > 0) {
+      const start = Date.now();
+      while (Date.now() - start < 200) {}
+      for (const pid of survivors) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
+    }
+  }
+
+  private async waitForPortRelease(maxAttempts = 15, intervalMs = 150): Promise<boolean> {
+    for (let i = 0; i < maxAttempts; i++) {
+      const online = await this.checkHealth();
+      if (!online) {
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return !(await this.checkHealth());
+  }
+
   async stop(onStatus?: (msg: string) => void): Promise<boolean> {
     onStatus?.("Shutting down Meepo proxy...");
 
-    // 1. Try clean HTTP shutdown endpoint first
+    // 1. Clean HTTP shutdown endpoint first
     try {
-      const res = await fetch(`${this.baseUrl}/v1/shutdown`, {
+      await fetch(`${this.baseUrl}/v1/shutdown`, {
         method: "POST",
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(1500),
       });
-      if (res.ok) {
-        this.managed = false;
-        return true;
-      }
-    } catch {
-      // Fall through to container/process termination
-    }
+    } catch {}
 
-    // 2. If Docker mode
-    if (this.activeMode === "docker") {
-      try {
-        execSync(`docker stop ${this.containerName}`, { stdio: "ignore", timeout: 5000 });
-        this.managed = false;
-        return true;
-      } catch {}
-    }
+    // 2. Unconditionally stop Docker container if running
+    this.stopDockerContainer(onStatus);
 
-    // 3. If binary spawned process
-    if (this.spawnedProcess && this.spawnedProcess.pid) {
-      try {
-        process.kill(this.spawnedProcess.pid, "SIGTERM");
-        this.managed = false;
-        return true;
-      } catch {}
-    }
+    // 3. Unconditionally terminate native binary processes (by PID, port, and process table)
+    this.killNativeProcesses(onStatus);
 
-    return false;
+    // 4. Clean up disk PID file
+    this.cleanupPidFile();
+
+    // 5. Deterministic barrier: ensure port is truly released
+    const released = await this.waitForPortRelease(15, 100);
+
+    this.managed = false;
+    this.spawnedProcess = undefined;
+    return released;
   }
 }

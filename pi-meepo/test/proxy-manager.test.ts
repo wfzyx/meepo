@@ -49,4 +49,13 @@ describe("ProxyManager", () => {
     const isHealthy = await mgr.checkHealth();
     expect(typeof isHealthy).toBe("boolean");
   });
+
+  it("cleans up disk PID file and native processes unconditionally on stop", async () => {
+    const mgr = new ProxyManager({ port: 8081, useDocker: true });
+    const pidFile = mgr.getPidFilePath();
+
+    // Verify stop clears PID file even when manager is in Docker mode
+    await mgr.stop();
+    expect(existsSync(pidFile)).toBe(false);
+  });
 });

@@ -8,14 +8,14 @@
     "healthEndpoint": "http://127.0.0.1:8080/health"
   },
   "roles": {
-    "gate": {
+    "router": {
       "name": "von-1.0",
       "type": "system_one",
       "endpoint": "http://127.0.0.1:8000/v1/systemone",
       "description": "Non-autoregressive 395M ModernBERT classifier for sub-30ms intent routing and tool schema pruning",
       "enabled": true
     },
-    "frontman": {
+    "chat": {
       "name": "gemma-4-E2B-it",
       "type": "autoregressive",
       "modelId": "gemma-4-E2B-it",
@@ -23,7 +23,7 @@
       "description": "Conversational layer with 128k context, user dialogue, and human-facing synthesis",
       "temperature": 0.7
     },
-    "hands": {
+    "tools": {
       "name": "LFM2.5-1.2B-Instruct",
       "type": "autoregressive",
       "modelId": "LFM2.5-1.2B-Instruct",
@@ -31,7 +31,7 @@
       "description": "Operational engine with short 1D convolutions for fast tool execution and agent harness steering",
       "temperature": 0.1
     },
-    "code_engine": {
+    "code": {
       "name": "Qwen3.5-2B",
       "type": "autoregressive",
       "modelId": "Qwen3.5-2B",
@@ -39,19 +39,19 @@
       "description": "Specialized syntax, AST, and diff generation engine using Gated Delta Networks",
       "temperature": 0.2
     },
-    "oracle": {
+    "cloud": {
       "name": "claude-opus-5-5",
       "type": "cloud_advisor",
       "provider": "anthropic",
       "modelId": "anthropic/claude-opus-5-5",
       "enabled": true,
-      "description": "External non-local oracle for hard architectural decisions, race conditions, and escalation"
+      "description": "External non-local model for hard architectural decisions, race conditions, and escalation"
     }
   },
   "policy": {
     "autoPruneTools": true,
     "codeEngineOffloadThresholdLines": 5,
-    "oracleEscalationTriggers": [
+    "cloudEscalationTriggers": [
       "concurrency_race",
       "deadlock",
       "memory_leak",

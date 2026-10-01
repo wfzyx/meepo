@@ -1,9 +1,10 @@
 /**
  * @wfzyx/meepo - Type Definitions
  * Divided We Stand: Multi-Brain Intelligence Mesh
+ * Scheme 1: Plain Functional (router, chat, tools, code, cloud)
  */
 
-export type BrainRole = 'gate' | 'frontman' | 'hands' | 'code_engine' | 'oracle';
+export type BrainRole = 'router' | 'chat' | 'tools' | 'code' | 'cloud';
 
 export type RoleType = 'system_one' | 'autoregressive' | 'cloud_advisor';
 
@@ -45,7 +46,7 @@ export interface LlamaServerConfig {
 export interface PolicyConfig {
   autoPruneTools: boolean;
   codeEngineOffloadThresholdLines: number;
-  oracleEscalationTriggers: string[];
+  cloudEscalationTriggers: string[];
 }
 
 export interface MeepoConfig {
@@ -54,11 +55,11 @@ export interface MeepoConfig {
   description: string;
   llamaServer: LlamaServerConfig;
   roles: {
-    gate: SystemOneRoleConfig;
-    frontman: AutoregressiveRoleConfig;
-    hands: AutoregressiveRoleConfig;
-    code_engine: AutoregressiveRoleConfig;
-    oracle: CloudAdvisorRoleConfig;
+    router: SystemOneRoleConfig;
+    chat: AutoregressiveRoleConfig;
+    tools: AutoregressiveRoleConfig;
+    code: AutoregressiveRoleConfig;
+    cloud: CloudAdvisorRoleConfig;
   };
   policy: PolicyConfig;
 }
@@ -103,7 +104,7 @@ export interface CodeGenerationResult {
   tokensGenerated?: number;
 }
 
-export interface OracleConsultationRequest {
+export interface CloudConsultationRequest {
   goal: string;
   filesInPlay?: string[];
   whatWasTried?: string;
@@ -111,7 +112,7 @@ export interface OracleConsultationRequest {
   constraints?: string[];
 }
 
-export interface OracleConsultationResult {
+export interface CloudConsultationResult {
   verdict: string;
   recommendedAction: string;
   architecturalRisks: string[];

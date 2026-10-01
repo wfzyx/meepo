@@ -1,6 +1,7 @@
 /**
  * @wfzyx/meepo - Mesh Client
- * Connects to llama-server, Von System One endpoint, and external Oracle
+ * Connects to llama-server, Von System One router, and external Cloud model
+ * Scheme 1: router, chat, tools, code, cloud
  */
 
 import { spawn } from 'child_process';
@@ -10,8 +11,8 @@ import type {
   MeshHealth,
   CodeGenerationRequest,
   CodeGenerationResult,
-  OracleConsultationRequest,
-  OracleConsultationResult,
+  CloudConsultationRequest,
+  CloudConsultationResult,
 } from './types';
 
 export class MeepoMeshClient {
@@ -60,8 +61,7 @@ export class MeepoMeshClient {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 800);
 
-      // Ping von endpoint with empty state or health probe
-      const res = await fetch(this.config.roles.gate.endpoint, {
+      const res = await fetch(this.config.roles.router.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -88,7 +88,7 @@ export class MeepoMeshClient {
   }
 
   /**
-   * Query Von System One to make a sub-50ms categorical decision
+   * Query Von System One to make a sub-50ms categorical routing decision
    */
   public async decideVon(
     state: string,
@@ -99,7 +99,7 @@ export class MeepoMeshClient {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1000);
 
-      const res = await fetch(this.config.roles.gate.endpoint, {
+      const res = await fetch(this.config.roles.router.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -166,7 +166,7 @@ export class MeepoMeshClient {
    * Delegate isolated code generation to Qwen 3.5 without tool schema pollution
    */
   public async generateCodeWithQwen(req: CodeGenerationRequest): Promise<CodeGenerationResult> {
-    const model = this.config.roles.code_engine.modelId;
+    const model = this.config.roles.code.modelId;
     const systemPrompt = `You are an elite, minimal code generation engine (${model}).
 Output ONLY the replacement code block or patch. No markdown conversational filler, no polite preamble, no explanations.
 Target Language: ${req.language}
@@ -182,11 +182,10 @@ ${req.existingCode ? `Existing code reference:\n\`\`\`${req.language}\n${req.exi
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      { temperature: this.config.roles.code_engine.temperature ?? 0.2 }
+      { temperature: this.config.roles.code.temperature ?? 0.2 }
     );
 
     let cleanCode = result.content.trim();
-    // Strip markdown code fences if wrapped
     if (cleanCode.startsWith('```')) {
       const lines = cleanCode.split('\n');
       if (lines.length > 2) {
@@ -203,26 +202,25 @@ ${req.existingCode ? `Existing code reference:\n\`\`\`${req.language}\n${req.exi
   }
 
   /**
-   * Consult the non-local Oracle (Claude Opus / Gemini Flash) for deep architectural problems
+   * Consult the non-local Cloud model (Claude Opus / Gemini Flash) for deep architectural problems
    */
-  public async consultOracle(
-    req: OracleConsultationRequest,
+  public async consultCloud(
+    req: CloudConsultationRequest,
     piSubagent?: (args: any) => Promise<any>
-  ): Promise<OracleConsultationResult> {
+  ): Promise<CloudConsultationResult> {
     const start = Date.now();
-    const oracleConfig = this.config.roles.oracle;
+    const cloudConfig = this.config.roles.cloud;
     const prompt = `Goal: ${req.goal}
 Files in play: ${(req.filesInPlay || []).join(', ') || 'N/A'}
 What was already tried: ${req.whatWasTried || 'First attempt'}
 Error / Obstacle: ${req.errorOrObstacle}
 Constraints: ${(req.constraints || []).join('; ') || 'Standard memory safety and zero regressions'}
 
-You are the Oracle: external senior systems architect. Provide:
+You are the Cloud Advisor: external senior systems architect. Provide:
 1. Verdict (Direct 1-line truth)
 2. Recommended Action (Exact executable steps)
 3. Architectural Risks / Deadlocks`;
 
-    // 1. Try pi subagent if available in context
     if (piSubagent) {
       try {
         const subResult = await piSubagent({
@@ -230,20 +228,19 @@ You are the Oracle: external senior systems architect. Provide:
           task: prompt,
         });
         return {
-          verdict: subResult?.output || 'Oracle returned evaluation',
+          verdict: subResult?.output || 'Cloud model returned evaluation',
           recommendedAction: 'Apply recommended diff/plan',
           architecturalRisks: [],
-          model: oracleConfig.modelId,
+          model: cloudConfig.modelId,
           latencyMs: Date.now() - start,
         };
       } catch {}
     }
 
-    // 2. Fallback to executing Pi CLI with oracle model
     return new Promise((resolve, reject) => {
       const proc = spawn(
         'pi',
-        ['--mode', 'json', '-p', '--no-session', '--model', oracleConfig.modelId, prompt],
+        ['--mode', 'json', '-p', '--no-session', '--model', cloudConfig.modelId, prompt],
         { stdio: ['ignore', 'pipe', 'pipe'] }
       );
 
@@ -254,7 +251,7 @@ You are the Oracle: external senior systems architect. Provide:
 
       proc.on('close', (code) => {
         if (code !== 0) {
-          return reject(new Error(`Oracle consultation failed (code ${code}): ${stderr}`));
+          return reject(new Error(`Cloud consultation failed (code ${code}): ${stderr}`));
         }
 
         let verdict = stdout.trim();
@@ -275,9 +272,9 @@ You are the Oracle: external senior systems architect. Provide:
 
         resolve({
           verdict,
-          recommendedAction: 'See Oracle response above',
+          recommendedAction: 'See Cloud response above',
           architecturalRisks: [],
-          model: oracleConfig.modelId,
+          model: cloudConfig.modelId,
           latencyMs: Date.now() - start,
         });
       });
@@ -295,44 +292,44 @@ You are the Oracle: external senior systems architect. Provide:
       llama.models.some((m) => m.toLowerCase().includes(modelId.toLowerCase()));
 
     const brains: Record<string, BrainStatus> = {
-      gate: {
-        role: 'gate',
-        name: this.config.roles.gate.name,
+      router: {
+        role: 'router',
+        name: this.config.roles.router.name,
         type: 'system_one',
         online: von.online,
         latencyMs: von.latencyMs,
         details: von.details,
       },
-      frontman: {
-        role: 'frontman',
-        name: this.config.roles.frontman.name,
+      chat: {
+        role: 'chat',
+        name: this.config.roles.chat.name,
         type: 'autoregressive',
         online: llama.online,
-        modelLoaded: isLoaded(this.config.roles.frontman.modelId),
-        details: `128k ctx (${this.config.roles.frontman.modelId})`,
+        modelLoaded: isLoaded(this.config.roles.chat.modelId),
+        details: `128k ctx (${this.config.roles.chat.modelId})`,
       },
-      hands: {
-        role: 'hands',
-        name: this.config.roles.hands.name,
+      tools: {
+        role: 'tools',
+        name: this.config.roles.tools.name,
         type: 'autoregressive',
         online: llama.online,
-        modelLoaded: isLoaded(this.config.roles.hands.modelId),
-        details: `Agent loop puppet (${this.config.roles.hands.modelId})`,
+        modelLoaded: isLoaded(this.config.roles.tools.modelId),
+        details: `Tool harness driver (${this.config.roles.tools.modelId})`,
       },
-      code_engine: {
-        role: 'code_engine',
-        name: this.config.roles.code_engine.name,
+      code: {
+        role: 'code',
+        name: this.config.roles.code.name,
         type: 'autoregressive',
         online: llama.online,
-        modelLoaded: isLoaded(this.config.roles.code_engine.modelId),
-        details: `Gated Delta diff engine (${this.config.roles.code_engine.modelId})`,
+        modelLoaded: isLoaded(this.config.roles.code.modelId),
+        details: `Gated Delta diff engine (${this.config.roles.code.modelId})`,
       },
-      oracle: {
-        role: 'oracle',
-        name: this.config.roles.oracle.name,
+      cloud: {
+        role: 'cloud',
+        name: this.config.roles.cloud.name,
         type: 'cloud_advisor',
-        online: Boolean(this.config.roles.oracle.enabled),
-        details: `Cloud Escalation (${this.config.roles.oracle.modelId})`,
+        online: Boolean(this.config.roles.cloud.enabled),
+        details: `Cloud Escalation (${this.config.roles.cloud.modelId})`,
       },
     };
 

@@ -1,6 +1,7 @@
 /**
  * @wfzyx/meepo - Intent Router & Dynamic Tool Pruner
  * Powered by Von 1.0 (Non-autoregressive 395M ModernBERT) with heuristic fallback
+ * Scheme 1: router, chat, tools, code, cloud
  */
 
 import type { MeepoConfig, RoutingDecision, BrainRole } from './types';
@@ -29,12 +30,12 @@ export class MeepoRouter {
     const start = Date.now();
 
     // 1. Try fast non-autoregressive classification with Von
-    if (this.config.roles.gate.enabled) {
+    if (this.config.roles.router.enabled) {
       const choices = {
-        frontman: 'Conversational chit-chat, high-level question, explanation, general synthesis',
-        hands: 'Terminal/shell command execution, filesystem exploration, file management, system administration',
-        code_engine: 'Writing code, refactoring a function, implementing an algorithm, syntax bug fix',
-        oracle: 'Complex architectural dispute, concurrency race, deadlock, repeated failure, deep design review',
+        chat: 'Conversational chit-chat, high-level question, explanation, general synthesis',
+        tools: 'Terminal/shell command execution, filesystem exploration, file management, system administration',
+        code: 'Writing code, refactoring a function, implementing an algorithm, syntax bug fix',
+        cloud: 'Complex architectural dispute, concurrency race, deadlock, repeated failure, deep design review',
       };
 
       const vonResult = await this.client.decideVon(userPrompt, choices);
@@ -77,14 +78,14 @@ export class MeepoRouter {
   private heuristicClassify(prompt: string): BrainRole {
     const p = prompt.toLowerCase();
 
-    // Oracle triggers
-    for (const trigger of this.config.policy.oracleEscalationTriggers) {
+    // Cloud escalation triggers
+    for (const trigger of this.config.policy.cloudEscalationTriggers) {
       if (p.includes(trigger.replace('_', ' '))) {
-        return 'oracle';
+        return 'cloud';
       }
     }
     if (p.includes('deadlock') || p.includes('race condition') || p.includes('architecture decision') || p.includes('advisor')) {
-      return 'oracle';
+      return 'cloud';
     }
 
     // Code engine triggers
@@ -100,10 +101,10 @@ export class MeepoRouter {
       p.includes('.py') ||
       p.includes('.rs')
     ) {
-      return 'code_engine';
+      return 'code';
     }
 
-    // Hands triggers (ops/shell)
+    // Tools triggers (ops/shell)
     if (
       p.startsWith('run ') ||
       p.startsWith('ls') ||
@@ -114,11 +115,11 @@ export class MeepoRouter {
       p.includes('delete') ||
       p.includes('ps aux')
     ) {
-      return 'hands';
+      return 'tools';
     }
 
-    // Default to Frontman for general conversational reasoning
-    return 'frontman';
+    // Default to Chat for general conversational reasoning
+    return 'chat';
   }
 
   /**
@@ -135,28 +136,24 @@ export class MeepoRouter {
     let essentialTools: Set<string>;
 
     switch (role) {
-      case 'frontman':
-        // Frontman only needs web search or read-only tools
+      case 'chat':
         essentialTools = new Set(['web_search', 'web_fetch', 'read', 'ask']);
         break;
-      case 'hands':
-        // Ops mechanic needs terminal and filesystem
+      case 'tools':
         essentialTools = new Set(['bash', 'read', 'write', 'edit', 'undo_last_edit']);
         break;
-      case 'code_engine':
-        // Code specialist needs editor and diagnostics
+      case 'code':
         essentialTools = new Set(['read', 'edit', 'write', 'lsp_diagnostics', 'undo_last_edit']);
         break;
-      case 'oracle':
-        // Oracle escalation tool
-        essentialTools = new Set(['meepo_ask_oracle', 'ask']);
+      case 'cloud':
+        essentialTools = new Set(['meepo_ask_cloud', 'ask']);
         break;
       default:
         essentialTools = new Set(availableTools);
     }
 
     // Always preserve Meepo built-in tools
-    essentialTools.add('meepo_ask_oracle');
+    essentialTools.add('meepo_ask_cloud');
     essentialTools.add('meepo_generate_code');
 
     const allowed = availableTools.filter((t) => essentialTools.has(t));

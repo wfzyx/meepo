@@ -1,6 +1,7 @@
 /**
  * @wfzyx/meepo - Multi-Brain Orchestrator
  * "Divided We Stand"
+ * Scheme 1: router, chat, tools, code, cloud
  */
 
 import * as fs from 'fs';
@@ -11,8 +12,8 @@ import type {
   RoutingDecision,
   CodeGenerationRequest,
   CodeGenerationResult,
-  OracleConsultationRequest,
-  OracleConsultationResult,
+  CloudConsultationRequest,
+  CloudConsultationResult,
 } from './types';
 import { MeepoMeshClient } from './client';
 import { MeepoRouter } from './router';
@@ -55,7 +56,7 @@ export class MeepoOrchestrator {
       }
     }
 
-    // Default built-in configuration
+    // Default built-in configuration (Scheme 1)
     return {
       name: 'meepo-default',
       version: '0.1.0',
@@ -66,14 +67,14 @@ export class MeepoOrchestrator {
         healthEndpoint: 'http://127.0.0.1:8080/health',
       },
       roles: {
-        gate: {
+        router: {
           name: 'von-1.0',
           type: 'system_one',
           endpoint: 'http://127.0.0.1:8000/v1/systemone',
           description: 'Non-autoregressive 395M ModernBERT classifier (<30ms decisions)',
           enabled: true,
         },
-        frontman: {
+        chat: {
           name: 'gemma-4-E2B-it',
           type: 'autoregressive',
           modelId: 'gemma-4-E2B-it',
@@ -81,7 +82,7 @@ export class MeepoOrchestrator {
           description: 'Conversational layer with 128k context',
           temperature: 0.7,
         },
-        hands: {
+        tools: {
           name: 'LFM2.5-1.2B-Instruct',
           type: 'autoregressive',
           modelId: 'LFM2.5-1.2B-Instruct',
@@ -89,7 +90,7 @@ export class MeepoOrchestrator {
           description: 'Operational engine for tool calling and agent harness steering',
           temperature: 0.1,
         },
-        code_engine: {
+        code: {
           name: 'Qwen3.5-2B',
           type: 'autoregressive',
           modelId: 'Qwen3.5-2B',
@@ -97,19 +98,19 @@ export class MeepoOrchestrator {
           description: 'Specialized syntax, AST, and diff generation engine',
           temperature: 0.2,
         },
-        oracle: {
+        cloud: {
           name: 'claude-opus-5-5',
           type: 'cloud_advisor',
           provider: 'anthropic',
           modelId: 'anthropic/claude-opus-5-5',
           enabled: true,
-          description: 'External non-local oracle for hard architectural decisions',
+          description: 'External non-local cloud model for hard architectural decisions',
         },
       },
       policy: {
         autoPruneTools: true,
         codeEngineOffloadThresholdLines: 5,
-        oracleEscalationTriggers: ['concurrency_race', 'deadlock', 'memory_leak', 'repeated_error'],
+        cloudEscalationTriggers: ['concurrency_race', 'deadlock', 'memory_leak', 'repeated_error'],
       },
     };
   }
@@ -126,11 +127,11 @@ export class MeepoOrchestrator {
     return this.client.generateCodeWithQwen(req);
   }
 
-  public async consultOracle(
-    req: OracleConsultationRequest,
+  public async consultCloud(
+    req: CloudConsultationRequest,
     piSubagent?: (args: any) => Promise<any>
-  ): Promise<OracleConsultationResult> {
-    return this.client.consultOracle(req, piSubagent);
+  ): Promise<CloudConsultationResult> {
+    return this.client.consultCloud(req, piSubagent);
   }
 
   /**
@@ -152,36 +153,36 @@ export class MeepoOrchestrator {
     return [
       `╔════════════════════════════════════════════════════════════════════════════╗`,
       `║                      MEEPO: DIVIDED WE STAND                               ║`,
-      `║               Multi-Brain Local & Hybrid Agent Mesh                        ║`,
+      `║         Multi-Brain Intelligence Mesh (router / chat / tools / code / cloud)║`,
       `╚════════════════════════════════════════════════════════════════════════════╝`,
       ``,
       `  llama-server: ${health.allHealthy ? '🟢 RUNNING' : '🔴 UNREACHABLE'} (${c.llamaServer.baseUrl})`,
       `  Active Models in llama.cpp: [${health.loadedLlamaModels.join(', ') || 'none'}]`,
       ``,
-      `  [1. GATE / SYSTEM 1]  ${b.gate.name}`,
-      `     Status: ${formatStatus(b.gate)}`,
-      `     Role:   ${c.roles.gate.description}`,
+      `  [1. ROUTER]       ${b.router.name}`,
+      `     Status: ${formatStatus(b.router)}`,
+      `     Role:   ${c.roles.router.description}`,
       ``,
-      `  [2. FRONTMAN]         ${b.frontman.name}`,
-      `     Status: ${formatStatus(b.frontman)}`,
-      `     Role:   ${c.roles.frontman.description}`,
+      `  [2. CHAT]         ${b.chat.name}`,
+      `     Status: ${formatStatus(b.chat)}`,
+      `     Role:   ${c.roles.chat.description}`,
       ``,
-      `  [3. HANDS / OPS]      ${b.hands.name}`,
-      `     Status: ${formatStatus(b.hands)}`,
-      `     Role:   ${c.roles.hands.description}`,
+      `  [3. TOOLS]        ${b.tools.name}`,
+      `     Status: ${formatStatus(b.tools)}`,
+      `     Role:   ${c.roles.tools.description}`,
       ``,
-      `  [4. CODE ENGINE]      ${b.code_engine.name}`,
-      `     Status: ${formatStatus(b.code_engine)}`,
-      `     Role:   ${c.roles.code_engine.description}`,
+      `  [4. CODE]         ${b.code.name}`,
+      `     Status: ${formatStatus(b.code)}`,
+      `     Role:   ${c.roles.code.description}`,
       ``,
-      `  [5. ORACLE (CLOUD)]   ${b.oracle.name}`,
-      `     Status: ${formatStatus(b.oracle)}`,
-      `     Role:   ${c.roles.oracle.description}`,
+      `  [5. CLOUD]        ${b.cloud.name}`,
+      `     Status: ${formatStatus(b.cloud)}`,
+      `     Role:   ${c.roles.cloud.description}`,
       ``,
       `  Policies:`,
       `     Tool Pruning:  ${c.policy.autoPruneTools ? 'ENABLED (Protects CPU prefill)' : 'DISABLED'}`,
       `     Code Offload:  > ${c.policy.codeEngineOffloadThresholdLines} lines`,
-      `     Oracle Triggers: ${c.policy.oracleEscalationTriggers.join(', ')}`,
+      `     Cloud Triggers: ${c.policy.cloudEscalationTriggers.join(', ')}`,
       `══════════════════════════════════════════════════════════════════════════════`,
     ].join('\n');
   }

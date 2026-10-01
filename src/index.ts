@@ -2,12 +2,12 @@
  * @wfzyx/meepo - Multi-Brain Local & Hybrid Agent Extension for Pi
  * "Divided We Stand"
  *
- * Brain Roster:
- * 1. Gate:       Von 1.0 (395M ModernBERT) - sub-30ms non-autoregressive router & tool pruner
- * 2. Frontman:   Gemma 4 E2B-it - conversational layer, 128k context, human synthesis
- * 3. Hands:      LFM 2.5 1.2B - operational tool execution puppet & bash/fs mechanics
- * 4. Code Engine: Qwen 3.5 2B - specialized Gated Delta syntax and diff generator
- * 5. Oracle:     Claude Opus / Gemini Flash - non-local cloud advisor for hard dilemmas
+ * Brain Roster (Scheme 1):
+ * 1. router: Von 1.0 (395M ModernBERT) - sub-30ms non-autoregressive triage & tool pruner
+ * 2. chat:   Gemma 4 E2B-it - conversational layer, 128k context, human dialogue
+ * 3. tools:  LFM 2.5 1.2B - operational tool execution puppet & bash/fs mechanics
+ * 4. code:   Qwen 3.5 2B - specialized Gated Delta syntax and diff generator
+ * 5. cloud:  Claude Opus / Gemini Flash - non-local cloud advisor for hard dilemmas
  */
 
 import { Type } from '@earendil-works/pi-ai';
@@ -17,7 +17,7 @@ import { MeepoOrchestrator } from './orchestrator';
 export default function registerMeepoExtension(pi: ExtensionAPI) {
   const orchestrator = new MeepoOrchestrator();
 
-  // 1. Slash Command: /meepo [status | config | reload | oracle | code]
+  // 1. Slash Command: /meepo [status | config | reload | cloud | code]
   pi.registerCommand('meepo', {
     description: 'Inspect and manage the Meepo multi-brain intelligence mesh',
     handler: async (args: string, ctx: any) => {
@@ -53,29 +53,29 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
           break;
         }
 
-        case 'oracle': {
+        case 'cloud': {
           const prompt = parts.slice(1).join(' ').trim();
           if (!prompt) {
-            ctx.ui?.notify?.('Usage: /meepo oracle <problem or question>', 'error');
+            ctx.ui?.notify?.('Usage: /meepo cloud <problem or question>', 'error');
             return;
           }
-          ctx.ui?.notify?.('Consulting Meepo Oracle (external cloud advisor)...', 'info');
+          ctx.ui?.notify?.('Consulting Meepo Cloud model...', 'info');
           try {
-            const res = await orchestrator.consultOracle(
+            const res = await orchestrator.consultCloud(
               {
-                goal: 'Direct user query via /meepo oracle',
+                goal: 'Direct user query via /meepo cloud',
                 errorOrObstacle: prompt,
               },
               (pi as any).subagent
             );
-            const formatted = `[Meepo Oracle - ${res.model} (${res.latencyMs}ms)]\n\n${res.verdict}`;
+            const formatted = `[Meepo Cloud - ${res.model} (${res.latencyMs}ms)]\n\n${res.verdict}`;
             if (typeof ctx.ui?.output === 'function') {
               ctx.ui.output(formatted);
             } else {
               console.log(formatted);
             }
           } catch (e: any) {
-            ctx.ui?.notify?.(`Oracle consultation failed: ${e.message}`, 'error');
+            ctx.ui?.notify?.(`Cloud consultation failed: ${e.message}`, 'error');
           }
           break;
         }
@@ -105,26 +105,26 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
         }
 
         default:
-          ctx.ui?.notify?.(`Unknown meepo subcommand '${sub}'. Use status, config, reload, oracle, or code.`, 'warning');
+          ctx.ui?.notify?.(`Unknown meepo subcommand '${sub}'. Use status, config, reload, cloud, or code.`, 'warning');
       }
     },
   });
 
-  // 2. Tool: meepo_ask_oracle (Escalation to non-local model)
+  // 2. Tool: meepo_ask_cloud (Escalation to non-local model)
   pi.registerTool({
-    name: 'meepo_ask_oracle',
-    label: 'Meepo Oracle',
+    name: 'meepo_ask_cloud',
+    label: 'Meepo Cloud',
     description:
-      'Consult the non-local Oracle (Claude Opus / Gemini Flash) for deep architectural decisions, concurrency races, deadlocks, memory leaks, or repeated obstacles. Cap brief to essentials.',
+      'Consult the non-local Cloud model (Claude Opus / Gemini Flash) for deep architectural decisions, concurrency races, deadlocks, memory leaks, or repeated obstacles. Cap brief to essentials.',
     parameters: Type.Object({
       goal: Type.String({ description: 'The overarching objective or task being attempted' }),
-      errorOrObstacle: Type.String({ description: 'The exact deadlock, repeated error, or hard decision requiring Oracle review' }),
+      errorOrObstacle: Type.String({ description: 'The exact deadlock, repeated error, or hard decision requiring Cloud review' }),
       filesInPlay: Type.Optional(Type.Array(Type.String(), { description: 'Source files relevant to the problem' })),
       whatWasTried: Type.Optional(Type.String({ description: 'Summary of what has already failed or been evaluated' })),
     }),
     execute: async (_toolCallId: string, params: any) => {
       try {
-        const result = await orchestrator.consultOracle(
+        const result = await orchestrator.consultCloud(
           {
             goal: params.goal,
             errorOrObstacle: params.errorOrObstacle,
@@ -138,7 +138,7 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
           content: [
             {
               type: 'text',
-              text: `[Meepo Oracle Response (${result.model} in ${result.latencyMs}ms)]\n${result.verdict}`,
+              text: `[Meepo Cloud Response (${result.model} in ${result.latencyMs}ms)]\n${result.verdict}`,
             },
           ],
           details: {
@@ -152,11 +152,11 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
           content: [
             {
               type: 'text',
-              text: `[Meepo Oracle Failed]: ${err.message}`,
+              text: `[Meepo Cloud Failed]: ${err.message}`,
             },
           ],
           details: {
-            model: 'oracle-error',
+            model: 'cloud-error',
             latencyMs: 0,
             error: err.message,
           },
@@ -168,7 +168,7 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
   // 3. Tool: meepo_generate_code (Subcontract code generation to Qwen 3.5)
   pi.registerTool({
     name: 'meepo_generate_code',
-    label: 'Meepo Code Engine',
+    label: 'Meepo Code',
     description:
       'Subcontract isolated code block, function, or patch generation to the specialized Qwen 3.5 Code Engine. Keeps large code synthesis out of the operational tool loop.',
     parameters: Type.Object({
@@ -190,7 +190,7 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
           content: [
             {
               type: 'text',
-              text: `[Meepo Code Engine Result (${result.model} in ${result.latencyMs}ms)]:\n\n${result.code}`,
+              text: `[Meepo Code Result (${result.model} in ${result.latencyMs}ms)]:\n\n${result.code}`,
             },
           ],
           details: {
@@ -205,11 +205,11 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
           content: [
             {
               type: 'text',
-              text: `[Meepo Code Engine Error]: ${err.message}`,
+              text: `[Meepo Code Error]: ${err.message}`,
             },
           ],
           details: {
-            model: 'code-engine-error',
+            model: 'code-error',
             tokens: undefined,
             latencyMs: 0,
             error: err.message,
@@ -238,7 +238,7 @@ export default function registerMeepoExtension(pi: ExtensionAPI) {
       const injection = `\n\n[Meepo Multi-Brain Sub-Delegation Available]:
 Divided We Stand: You have access to specialized Meepo sub-brains:
 - Use 'meepo_generate_code' when you need to write complex algorithms, functions, or patches; Qwen 3.5 generates the pure code block without polluting tool schemas.
-- Use 'meepo_ask_oracle' when hitting concurrency deadlocks, memory leaks, repeated errors, or hard architectural crossroads. The non-local Oracle (${c.roles.oracle.modelId}) will evaluate the state.`;
+- Use 'meepo_ask_cloud' when hitting concurrency deadlocks, memory leaks, repeated errors, or hard architectural crossroads. The non-local Cloud model (${c.roles.cloud.modelId}) will evaluate the state.`;
 
       if (event?.systemPrompt) {
         return {

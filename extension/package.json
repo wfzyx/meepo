@@ -1,6 +1,6 @@
 {
   "name": "pi-meepo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Zero-config auto-wiring and lifecycle manager for Meepo AI mesh in Pi",
   "author": "wfzyx",
   "license": "Apache-2.0",
@@ -38,7 +38,7 @@
     "test": "bun test"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": ">=1.0.0",
     "@mariozechner/pi-coding-agent": "*"
   },
   "devDependencies": {

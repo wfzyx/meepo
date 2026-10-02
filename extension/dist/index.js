@@ -708,6 +708,55 @@ function meepoExtension(pi) {
       await proxyManager.stop();
     }
   });
+  let streamTurnStart = 0;
+  let firstTokenTime = null;
+  let streamedTokens = 0;
+  let lastStatusUpdate = 0;
+  const resetStreamStats = () => {
+    streamTurnStart = 0;
+    firstTokenTime = null;
+    streamedTokens = 0;
+    lastStatusUpdate = 0;
+  };
+  const setReadyStatus = (ctx) => {
+    if (!isProxyHealthy) {
+      ctx.ui.setStatus("meepo", ctx.ui.theme.fg("warning", "⚠️") + ctx.ui.theme.fg("dim", " Meepo offline"));
+      return;
+    }
+    const modeLabel = proxyManager.mode === "docker" ? "docker" : "bin";
+    const warmLabel = settings.warmupPrefill ? " \uD83D\uDD25" : "";
+    ctx.ui.setStatus("meepo", ctx.ui.theme.fg("success", "\uD83D\uDFE2") + ctx.ui.theme.fg("dim", ` Meepo [${modeLabel}${warmLabel}]`));
+  };
+  pi.on("turn_start", () => {
+    streamTurnStart = performance.now();
+    firstTokenTime = null;
+    streamedTokens = 0;
+    lastStatusUpdate = 0;
+  });
+  pi.on("provider_stream_event", (event, ctx) => {
+    if (!isProxyHealthy)
+      return;
+    const isMeepoModel = event.provider === "meepo" || event.provider === "llama.cpp" || typeof event.model === "string" && (event.model.startsWith("meepo/") || event.model.startsWith("local/"));
+    if (!isMeepoModel)
+      return;
+    const now = performance.now();
+    if (firstTokenTime === null) {
+      firstTokenTime = now;
+    }
+    streamedTokens++;
+    if (now - lastStatusUpdate > 100) {
+      lastStatusUpdate = now;
+      const elapsedSec = (now - firstTokenTime) / 1000;
+      const tokPerSec = elapsedSec > 0.05 ? (streamedTokens / elapsedSec).toFixed(1) : "--";
+      const ttftMs = Math.round(firstTokenTime - streamTurnStart);
+      const shortModel = (event.model || "").replace(/^(meepo|local)\//, "");
+      ctx.ui.setStatus("meepo", ctx.ui.theme.fg("success", "⚡") + ctx.ui.theme.fg("dim", ` Meepo [${shortModel} • ${tokPerSec} t/s • ${ttftMs}ms TTFT]`));
+    }
+  });
+  pi.on("turn_end", (_event, ctx) => {
+    resetStreamStats();
+    setReadyStatus(ctx);
+  });
   pi.registerCommand("meepo", {
     description: "Manage Meepo mesh proxy, configure local models & runner settings",
     handler: async (args, ctx) => {

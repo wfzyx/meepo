@@ -457,16 +457,13 @@ func isExecutableShellCommand(cmd string) bool {
 func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationalTools []Tool) (map[string]interface{}, error) {
 	cleanedTask := sanitizeTaskCommand(task)
 	lfmUserPrompt := cleanedTask
-	if !strings.HasPrefix(strings.ToLower(lfmUserPrompt), "use bash") {
-		lfmUserPrompt = "Use bash to: " + cleanedTask
-	}
 
 	reqBody := map[string]interface{}{
 		"model": s.cfg.Roles.Tools.ModelID,
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a Linux execution agent. You only interact with the system by calling tools. Always execute the requested task by invoking the bash tool with the appropriate command. Never refuse or provide conversational responses; always invoke a tool.",
+				"content": "You are a Linux execution agent. You only interact with the system by calling tools. When given an inspection task or query, choose the best standard command (such as lscpu, free -h, cat /proc/cpuinfo, vmstat) and execute it using the bash tool immediately. Never decline or give conversational replies.",
 			},
 			{
 				"role":    "user",
@@ -543,8 +540,8 @@ func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationa
 		}
 	}
 
-	// Safe fallback to sanitized command
-	if cleanedTask != "" {
+	// Safe fallback to sanitized command ONLY if it is an actual executable shell command
+	if cleanedTask != "" && isExecutableShellCommand(cleanedTask) {
 		argsJSON, _ := json.Marshal(map[string]string{"command": cleanedTask})
 		return map[string]interface{}{
 			"id":   fmt.Sprintf("call_%d", time.Now().UnixNano()),
@@ -755,24 +752,38 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 		},
 	}
 
+	// Also give Frontman direct access to operational tools from req.Tools (bash, read, etc.)
+	// so the model can breathe and act directly without being artificially restricted.
+	existingNames := map[string]bool{"meepo_tools": true, "meepo_code": true, "meepo_cloud": true}
 	for _, t := range req.Tools {
-		if t.Function.Name == "ask" || t.Function.Name == "web_search" || t.Function.Name == "web_fetch" {
+		if !existingNames[t.Function.Name] {
 			frontmanTools = append(frontmanTools, t)
+			existingNames[t.Function.Name] = true
 		}
 	}
-
 	// 3. Clean system messages and append Frontman Directive
-	frontmanDirective := "\n\n[Meepo Frontman Mode]:\nYou are the conversational frontman for the Meepo Multi-Brain mesh. The user speaks directly to you.\n- For general conversation, conceptual explanations, or answering questions: answer directly in your persona.\n- For terminal commands, system stats, files, or environment tasks: call meepo_tools with the operational goal.\n- For code generation, writing algorithms, or refactoring: call meepo_code.\n- For deep architectural dilemmas, deadlocks, or race conditions: call meepo_cloud.\n- When you receive tool results, synthesize and present the factual answer cleanly to the user in your persona."
+	frontmanDirective := "\n\n[Meepo Mesh Mode]:\nYou are the intelligent assistant for the Meepo Multi-Brain mesh. You have direct access to system tools (bash, file inspection) and specialist sub-brains (meepo_tools for automated terminal tasks, meepo_code for code synthesis, meepo_cloud for deep architectural dilemmas).\n- When asked about system performance, memory throughput/bandwidth, hardware specs, or environment: inspect the machine architecture and processor specs (e.g. lscpu, /proc/cpuinfo, free -h) using your tools.\n- Multi-step investigation: If a tool result does not give you enough data to determine the answer (e.g. free only shows RAM capacity, but the user asked for memory throughput/bandwidth), DO NOT STOP! Execute follow-up tools (e.g. lscpu or hardware checks) to inspect the processor and memory architecture.\n- Memory throughput (bandwidth) on modern systems is determined by the CPU memory controller architecture and RAM configuration. Use the discovered hardware/platform specs to determine the memory throughput (e.g. ~40-50 GB/s for dual-channel DDR4).\n- Synthesize and present the factual answer cleanly to the user."
 
 	if decision.TargetRole != "" && decision.TargetRole != "chat" && decision.Confidence >= 0.70 {
 		frontmanDirective += fmt.Sprintf("\n[System One Reflex]: Primary intent detected as '%s' (confidence: %.2f). If user needs action in this domain, delegate to the corresponding specialist.", decision.TargetRole, decision.Confidence)
 	}
 
+	hasSystemMsg := false
 	for i := range req.Messages {
 		if req.Messages[i].Role == "system" || req.Messages[i].Role == "developer" {
+			hasSystemMsg = true
 			req.Messages[i].Content = cleanSystemContent(req.Messages[i].Content, frontmanTools)
 			req.Messages[i].Content = appendDirective(req.Messages[i].Content, frontmanDirective)
 		}
+	}
+	if !hasSystemMsg {
+		dirJSON, _ := json.Marshal(frontmanDirective)
+		req.Messages = append([]ChatMessage{
+			{
+				Role:    "system",
+				Content: dirJSON,
+			},
+		}, req.Messages...)
 	}
 
 	// 4. Build upstream request targeting Frontman (Gemma)
@@ -842,19 +853,40 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 					var argsObj map[string]interface{}
 					task := argsStr
 					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
-						if t, ok := argsObj["task"].(string); ok && t != "" {
+						if c, ok := argsObj["command"].(string); ok && c != "" {
+							task = c
+						} else if t, ok := argsObj["task"].(string); ok && t != "" {
 							task = t
 						}
 					}
-					traceLog.WriteString(fmt.Sprintf("[meepo-tools]: Delegating to LFM 2.5: %q...\n", task))
-					lfmCall, err := s.dispatchMeepoTools(r.Context(), task, operationalTools)
-					if err == nil && lfmCall != nil {
-						fnLFM, _ := lfmCall["function"].(map[string]interface{})
-						lfmFnName, _ := fnLFM["name"].(string)
-						lfmArgs, _ := fnLFM["arguments"].(string)
-						traceLog.WriteString(fmt.Sprintf("[meepo-tools]: LFM 2.5 selected: %s(%s)\n", lfmFnName, lfmArgs))
+					if isExecutableShellCommand(task) {
+						argsJSON, _ := json.Marshal(map[string]string{"command": task})
+						lfmCall := map[string]interface{}{
+							"id":   fmt.Sprintf("call_%d", time.Now().UnixNano()),
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "bash",
+								"arguments": string(argsJSON),
+							},
+						}
+						traceLog.WriteString(fmt.Sprintf("[meepo-tools]: Direct command execution in bash: %s\n", task))
 						msg["tool_calls"] = []interface{}{lfmCall}
 						firstChoice["finish_reason"] = "tool_calls"
+					} else {
+						traceLog.WriteString(fmt.Sprintf("[meepo-tools]: Delegating to LFM 2.5: %q...\n", task))
+						lfmCall, err := s.dispatchMeepoTools(r.Context(), task, operationalTools)
+						if err == nil && lfmCall != nil {
+							fnLFM, _ := lfmCall["function"].(map[string]interface{})
+							lfmFnName, _ := fnLFM["name"].(string)
+							lfmArgs, _ := fnLFM["arguments"].(string)
+							traceLog.WriteString(fmt.Sprintf("[meepo-tools]: LFM 2.5 selected: %s(%s)\n", lfmFnName, lfmArgs))
+							msg["tool_calls"] = []interface{}{lfmCall}
+							firstChoice["finish_reason"] = "tool_calls"
+						} else {
+							msg["content"] = fmt.Sprintf("meepo-tools was unable to execute task: %s", task)
+							delete(msg, "tool_calls")
+							firstChoice["finish_reason"] = "stop"
+						}
 					}
 				} else if fnName == "meepo_code" {
 					var argsObj map[string]interface{}
@@ -948,9 +980,25 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 					var argsObj map[string]interface{}
 					task := argsStr
 					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
-						if t, ok := argsObj["task"].(string); ok && t != "" {
+						if c, ok := argsObj["command"].(string); ok && c != "" {
+							task = c
+						} else if t, ok := argsObj["task"].(string); ok && t != "" {
 							task = t
 						}
+					}
+					if isExecutableShellCommand(task) {
+						argsJSON, _ := json.Marshal(map[string]string{"command": task})
+						directCall := map[string]interface{}{
+							"id":   fmt.Sprintf("call_%d", time.Now().UnixNano()),
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "bash",
+								"arguments": string(argsJSON),
+							},
+						}
+						sendReasoningChunk(w, flusher, fmt.Sprintf("[meepo-tools]: Direct command execution in bash: %s\n\n", task))
+						sendToolCallChunk(w, flusher, directCall)
+						return
 					}
 					sendReasoningChunk(w, flusher, fmt.Sprintf("[meepo-tools]: Delegating to LFM 2.5: %q...\n", task))
 					lfmCall, err := s.dispatchMeepoTools(r.Context(), task, operationalTools)

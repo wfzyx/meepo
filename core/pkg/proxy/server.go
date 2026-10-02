@@ -31,7 +31,11 @@ func NewServer(cfg *config.Config) *Server {
 		cfg:    cfg,
 		router: router.NewRouter(cfg),
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 0,
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: 60 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
+			},
 		},
 	}
 }
@@ -123,12 +127,16 @@ func (s *Server) handleWarmup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) WarmupFrontman() {
 	time.Sleep(1 * time.Second) // wait for server listener and llama-server
-	if s.cfg.Roles.Chat.ModelID == "" {
-		return
+	if s.cfg.Roles.Code.ModelID != "" {
+		log.Printf("[meepo] Initiating KV cache prefill warmup for core brain (%s)...", s.cfg.Roles.Code.ModelID)
+		s.WarmupModel(s.cfg.Roles.Code.ModelID, "You are the core analytical, coding, and reasoning engine for the Meepo mesh.")
+		log.Printf("[meepo] Core brain KV cache prefill warmup complete.")
 	}
-	log.Printf("[meepo] Initiating KV cache prefill warmup for frontman (%s)...", s.cfg.Roles.Chat.ModelID)
-	s.WarmupModel(s.cfg.Roles.Chat.ModelID, "You are a concise, helpful coding assistant and frontman.")
-	log.Printf("[meepo] Frontman KV cache prefill warmup complete.")
+	if s.cfg.Roles.Chat.ModelID != "" {
+		log.Printf("[meepo] Initiating KV cache prefill warmup for voice frontman (%s)...", s.cfg.Roles.Chat.ModelID)
+		s.WarmupModel(s.cfg.Roles.Chat.ModelID, "You are the conversational frontman (Toph persona: sarcastic, blunt, confident, no pleasantries).")
+		log.Printf("[meepo] Voice frontman KV cache prefill warmup complete.")
+	}
 }
 
 func (s *Server) WarmupModel(modelID, sysPrompt string) {
@@ -445,13 +453,89 @@ func isExecutableShellCommand(cmd string) bool {
 		return false
 	}
 	lower := strings.ToLower(cmd)
-	prosePrefixes := []string{"check ", "inspect ", "get ", "find ", "what ", "how ", "can ", "please ", "show ", "tell "}
-	for _, p := range prosePrefixes {
-		if strings.HasPrefix(lower, p) {
+	proseKeywords := []string{"check", "inspect", "system", "get", "find", "what", "how", "can", "please", "show", "tell", "calculate", "determine"}
+	for _, kw := range proseKeywords {
+		if strings.HasPrefix(lower, kw+" ") || strings.Contains(lower, " "+kw+" ") {
 			return false
 		}
 	}
-	return true
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return false
+	}
+	firstWord := parts[0]
+	knownCommands := map[string]bool{
+		"lscpu": true, "free": true, "cat": true, "ls": true, "grep": true,
+		"head": true, "tail": true, "lsmem": true, "uname": true, "ps": true,
+		"top": true, "vmstat": true, "iostat": true, "mpstat": true, "dmidecode": true,
+		"find": true, "git": true, "bun": true, "go": true, "echo": true,
+		"awk": true, "sed": true, "wc": true, "df": true, "du": true,
+	}
+	return knownCommands[firstWord]
+}
+func (s *Server) maxTokensForRole(role config.ModelRoleConfig, clientMaxTokens *int) int {
+	quarter := int(float64(role.ContextWindow) * 0.25)
+	if quarter <= 0 {
+		quarter = 4096
+	}
+	if clientMaxTokens != nil && *clientMaxTokens > 0 && *clientMaxTokens < quarter {
+		return *clientMaxTokens
+	}
+	return quarter
+}
+
+func (s *Server) formatWithGemma(ctx context.Context, userPrompt, brainContent string, clientMaxTokens *int) (string, error) {
+	if strings.TrimSpace(brainContent) == "" {
+		return "", nil
+	}
+	maxTokens := s.maxTokensForRole(s.cfg.Roles.Chat, clientMaxTokens)
+	reqBody := map[string]interface{}{
+		"model": s.cfg.Roles.Chat.ModelID,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are the conversational frontman (Toph persona: sarcastic, blunt, confident, no pleasantries). Format the technical solution, code, or calculations from the brain into your voice. Keep all code, numbers, calculations, and technical facts strictly accurate.",
+			},
+			{
+				"role":    "user",
+				"content": userPrompt,
+			},
+			{
+				"role":    "assistant",
+				"content": brainContent,
+			},
+		},
+		"max_tokens":  maxTokens,
+		"temperature": 0.3,
+		"stream":      false,
+	}
+	b, err := json.Marshal(reqBody)
+	if err != nil {
+		return brainContent, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", s.cfg.LlamaServer.BaseURL+"/chat/completions", bytes.NewReader(b))
+	if err != nil {
+		return brainContent, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return brainContent, err
+	}
+	defer resp.Body.Close()
+	var respMap map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&respMap); err != nil {
+		return brainContent, err
+	}
+	choices, _ := respMap["choices"].([]interface{})
+	if len(choices) > 0 {
+		firstChoice, _ := choices[0].(map[string]interface{})
+		msg, _ := firstChoice["message"].(map[string]interface{})
+		if content, ok := msg["content"].(string); ok && strings.TrimSpace(content) != "" {
+			return content, nil
+		}
+	}
+	return brainContent, nil
 }
 
 func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationalTools []Tool) (map[string]interface{}, error) {
@@ -471,7 +555,7 @@ func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationa
 			},
 		},
 		"tools":       operationalTools,
-		"max_tokens":  250,
+		"max_tokens":  s.maxTokensForRole(s.cfg.Roles.Tools, nil),
 		"temperature": 0.1,
 		"stream":      false,
 	}
@@ -569,7 +653,7 @@ func (s *Server) dispatchMeepoCode(ctx context.Context, language, task string) (
 				"content": fmt.Sprintf("Language: %s\nTask: %s", language, task),
 			},
 		},
-		"max_tokens":  2048,
+		"max_tokens":  s.maxTokensForRole(s.cfg.Roles.Code, nil),
 		"temperature": 0.2,
 		"stream":      false,
 	}
@@ -693,91 +777,82 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 			},
 		}
 	}
-	// 2. Frontman meta-tools exposed to Gemma
-	frontmanTools := []Tool{
-		{
-			Type: "function",
-			Function: FunctionDefinition{
-				Name:        "meepo_tools",
-				Description: "Delegate shell commands, terminal tools, system inspection, or filesystem operations to meepo-tools (LFM). State the command to execute (e.g. 'lscpu', 'free -h', 'cat /proc/cpuinfo') or the operational task clearly. LFM will execute the appropriate tools.",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"command": map[string]interface{}{
-							"type":        "string",
-							"description": "The shell command to execute",
-						},
-						"task": map[string]interface{}{
-							"type":        "string",
-							"description": "Operational goal or inspection task",
-						},
-					},
-				},
-			},
-		},
-		{
-			Type: "function",
-			Function: FunctionDefinition{
-				Name:        "meepo_code",
-				Description: "Delegate code implementation, function writing, algorithms, or syntax refactoring to the meepo-code engine (Qwen).",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"language": map[string]interface{}{
-							"type":        "string",
-							"description": "Target programming language (e.g. go, typescript, python)",
-						},
-						"task": map[string]interface{}{
-							"type":        "string",
-							"description": "Exact implementation requirements or function specification",
-						},
-					},
-					"required": []string{"language", "task"},
-				},
-			},
-		},
-		{
-			Type: "function",
-			Function: FunctionDefinition{
-				Name:        "meepo_cloud",
-				Description: "Escalate complex distributed systems deadlocks, multi-threaded race conditions, or hard architectural dilemmas to the non-local Claude Opus model.",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"problem": map[string]interface{}{
-							"type":        "string",
-							"description": "Clear statement of the architectural dilemma, deadlock, or race condition",
-						},
-					},
-					"required": []string{"problem"},
-				},
-			},
-		},
-	}
+	// 2. Select Worker Brain (Qwen 3.5 2B) or Chat (Gemma for pure small talk)
+	isPureChat := decision.TargetRole == "chat" && decision.Confidence >= 0.75 && len(req.Tools) == 0
 
-	// Chat only has tools to invoke other meepos (sub-brains) plus conversational tools (ask)
-	for _, t := range req.Tools {
-		if t.Function.Name == "ask" {
-			frontmanTools = append(frontmanTools, t)
+	var targetModel string
+	var forwardedTools []Tool
+	var targetDirective string
+
+	if isPureChat {
+		targetModel = s.cfg.Roles.Chat.ModelID
+		targetDirective = "\n\n[Meepo Frontman Chat Mode]:\nYou are the conversational frontman for Meepo (Toph persona: sarcastic, blunt, confident, no pleasantries). Respond directly to the user's greeting or dialogue."
+		forwardedTools = nil
+	} else {
+		targetModel = s.cfg.Roles.Code.ModelID
+		brainTools := []Tool{
+			{
+				Type: "function",
+				Function: FunctionDefinition{
+					Name:        "meepo_tools",
+					Description: "Delegate shell commands, terminal tools, system inspection, or filesystem operations to meepo-tools (LFM). State the command to execute (e.g. 'lscpu', 'free -h', 'cat /proc/cpuinfo') or the operational task clearly. LFM will execute the appropriate tools.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"command": map[string]interface{}{
+								"type":        "string",
+								"description": "The shell command to execute",
+							},
+							"task": map[string]interface{}{
+								"type":        "string",
+								"description": "Operational goal or inspection task",
+							},
+						},
+					},
+				},
+			},
+			{
+				Type: "function",
+				Function: FunctionDefinition{
+					Name:        "meepo_cloud",
+					Description: "Escalate complex distributed systems deadlocks, multi-threaded race conditions, or hard architectural dilemmas to the non-local Claude Opus model.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"problem": map[string]interface{}{
+								"type":        "string",
+								"description": "Clear statement of the architectural dilemma, deadlock, or race condition",
+							},
+						},
+						"required": []string{"problem"},
+					},
+				},
+			},
 		}
+		// File tools that Qwen can directly use: read, write, edit, codemode, undo_last_edit
+		for _, t := range req.Tools {
+			if t.Function.Name == "read" || t.Function.Name == "write" || t.Function.Name == "edit" || t.Function.Name == "codemode" || t.Function.Name == "undo_last_edit" {
+				brainTools = append(brainTools, t)
+			}
+		}
+		forwardedTools = brainTools
+		targetDirective = "\n\n[Meepo Brain Mode]:\nYou are the core analytical, coding, and reasoning engine for the Meepo mesh. You solve tasks, write code, calculate system metrics, and inspect the environment.\n- You have file tools: read, edit, write, and codemode.\n- You do not have direct bash access, but you can delegate terminal commands, system inspections, or hardware queries to meepo_tools (e.g. lscpu, free -h, cat /proc/meminfo).\n- Memory Bandwidth Calculation: Memory Bandwidth (GB/s) = (MT/s × 8 bytes × number of channels) / 1000. Identify the processor model (from lscpu) and supported memory configuration from inspection data to calculate the throughput.\n- Multi-step investigation: If tool results do not contain enough data, execute follow-up tools via meepo_tools to get ground truth.\n- When you have the solution, provide the complete factual analysis, calculation, or code."
 	}
-	// 3. Clean system messages and append Frontman Directive
-	frontmanDirective := "\n\n[Meepo Mesh Mode]:\nYou are the conversational frontman for the Meepo Multi-Brain mesh. The user speaks directly to you. You do not execute tools directly; the only tools you have are to invoke your specialist sub-brains:\n- For terminal commands, system stats, files, or environment tasks: call meepo_tools with the command or task to execute.\n- For code generation, writing algorithms, or refactoring: call meepo_code.\n- For deep architectural dilemmas, deadlocks, or race conditions: call meepo_cloud.\n- Multi-step investigation: If a tool result does not give you enough data to determine the answer (e.g. free only shows RAM capacity, but the user asked for memory throughput/bandwidth), DO NOT STOP! Execute follow-up tools via meepo_tools (e.g. lscpu or hardware checks) to inspect the processor and memory architecture.\n- Memory throughput (bandwidth) on modern systems is determined by the CPU memory controller architecture and RAM configuration. On Intel 11th Gen platforms with dual-channel DDR4-3200 / LPDDR4x, memory throughput is roughly 40~50 GB/s (up to 51.2 GB/s theoretical peak). Report this calculated throughput range clearly.\n- When you receive tool results from your sub-brains, synthesize and present the factual answer cleanly to the user in your persona."
 
 	if decision.TargetRole != "" && decision.TargetRole != "chat" && decision.Confidence >= 0.70 {
-		frontmanDirective += fmt.Sprintf("\n[System One Reflex]: Primary intent detected as '%s' (confidence: %.2f). If user needs action in this domain, delegate to the corresponding specialist.", decision.TargetRole, decision.Confidence)
+		targetDirective += fmt.Sprintf("\n[System One Reflex]: Primary intent detected as '%s' (confidence: %.2f).", decision.TargetRole, decision.Confidence)
 	}
 
 	hasSystemMsg := false
 	for i := range req.Messages {
 		if req.Messages[i].Role == "system" || req.Messages[i].Role == "developer" {
 			hasSystemMsg = true
-			req.Messages[i].Content = cleanSystemContent(req.Messages[i].Content, frontmanTools)
-			req.Messages[i].Content = appendDirective(req.Messages[i].Content, frontmanDirective)
+			req.Messages[i].Content = cleanSystemContent(req.Messages[i].Content, forwardedTools)
+			req.Messages[i].Content = appendDirective(req.Messages[i].Content, targetDirective)
 		}
 	}
 	if !hasSystemMsg {
-		dirJSON, _ := json.Marshal(frontmanDirective)
+		dirJSON, _ := json.Marshal(targetDirective)
 		req.Messages = append([]ChatMessage{
 			{
 				Role:    "system",
@@ -786,18 +861,22 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 		}, req.Messages...)
 	}
 
-	// 4. Build upstream request targeting Frontman (Gemma)
+	// 4. Build upstream request targeting Brain (Qwen) or Chat (Gemma for pure chat)
+	targetRoleCfg := s.cfg.Roles.Code
+	if isPureChat {
+		targetRoleCfg = s.cfg.Roles.Chat
+	}
+	maxTokens := s.maxTokensForRole(targetRoleCfg, req.MaxTokens)
+
 	forwardedMap := map[string]interface{}{
-		"model":    s.cfg.Roles.Chat.ModelID,
-		"messages": req.Messages,
-		"tools":    frontmanTools,
-		"stream":   req.Stream,
+		"model":      targetModel,
+		"messages":   req.Messages,
+		"tools":      forwardedTools,
+		"stream":     req.Stream,
+		"max_tokens": maxTokens,
 	}
 	if req.Temperature != nil {
 		forwardedMap["temperature"] = req.Temperature
-	}
-	if req.MaxTokens != nil {
-		forwardedMap["max_tokens"] = req.MaxTokens
 	}
 	if req.MaxCompletionTokens != nil {
 		forwardedMap["max_completion_tokens"] = req.MaxCompletionTokens
@@ -926,6 +1005,14 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 					}
 				}
 			}
+			if len(toolCalls) == 0 && targetModel == s.cfg.Roles.Code.ModelID {
+				if rawContent, ok := msg["content"].(string); ok && strings.TrimSpace(rawContent) != "" {
+					formatted, err := s.formatWithGemma(r.Context(), userPrompt, rawContent, req.MaxTokens)
+					if err == nil && strings.TrimSpace(formatted) != "" {
+						msg["content"] = formatted
+					}
+				}
+			}
 
 			if traceLog.Len() > 0 {
 				existingReasoning, _ := msg["reasoning_content"].(string)
@@ -961,6 +1048,7 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 	var toolCallName string
 	var toolCallID string
 	var toolCallArgs strings.Builder
+	var brainText strings.Builder
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -1075,7 +1163,14 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 					return
 				}
 			}
-
+			if !isToolCall && targetModel == s.cfg.Roles.Code.ModelID && brainText.Len() > 0 {
+				formatted, err := s.formatWithGemma(r.Context(), userPrompt, brainText.String(), req.MaxTokens)
+				if err == nil && strings.TrimSpace(formatted) != "" {
+					sendContentChunk(w, flusher, formatted)
+				} else {
+					sendContentChunk(w, flusher, brainText.String())
+				}
+			}
 			fmt.Fprintf(w, "data: [DONE]\n\n")
 			if hasFlusher {
 				flusher.Flush()
@@ -1110,11 +1205,22 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 				}
 
 				if !isToolCall {
-					chunkMap["model"] = "meepo"
-					outBytes, _ := json.Marshal(chunkMap)
-					fmt.Fprintf(w, "data: %s\n\n", outBytes)
-					if hasFlusher {
-						flusher.Flush()
+					if rc, ok := delta["reasoning_content"].(string); ok && rc != "" {
+						sendReasoningChunk(w, flusher, rc)
+						continue
+					}
+					if targetModel == s.cfg.Roles.Code.ModelID {
+						if c, ok := delta["content"].(string); ok && c != "" {
+							brainText.WriteString(c)
+							continue
+						}
+					} else {
+						chunkMap["model"] = "meepo"
+						outBytes, _ := json.Marshal(chunkMap)
+						fmt.Fprintf(w, "data: %s\n\n", outBytes)
+						if hasFlusher {
+							flusher.Flush()
+						}
 					}
 				}
 			}

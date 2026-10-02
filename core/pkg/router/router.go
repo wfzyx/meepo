@@ -156,6 +156,7 @@ type vonResponse struct {
 	Answers map[string]struct {
 		Choice        string             `json:"choice"`
 		Probabilities map[string]float64 `json:"probabilities"`
+		Confidence    float64            `json:"confidence"`
 	} `json:"answers"`
 }
 
@@ -163,11 +164,14 @@ func (r *Router) RouteTurn(ctx context.Context, userPrompt string, availableTool
 	start := time.Now()
 
 	if r.cfg.Roles.Router.Enabled {
+		// Short, contrastive criteria. Measured on a 15-probe set against Von
+		// 1.3.5: the old verbose criteria sent "hi there" to tools (0.20) and
+		// scored 10/12; these score 14/15 with zero false chat at >= 0.80.
 		criteria := map[string]string{
-			"chat":  "General conversation, explaining concepts, answering conceptual questions, high-level guidance, or summarizing information.",
-			"tools": "Autonomous tool execution: running shell commands, bash terminal tasks, checking system info or hardware stats, git operations, filesystem exploration.",
-			"code":  "Code implementation, writing or editing functions, refactoring files, implementing algorithms, fixing syntax bugs, or AST patches.",
-			"cloud": "High-level distributed systems architecture, concurrency deadlock analysis, multi-threaded race conditions, core protocol redesign.",
+			"chat":  "Greetings, small talk, thanks, or explaining a concept (programming or general) from knowledge alone.",
+			"tools": "Needs live facts from this machine: run shell commands, inspect hardware, files, processes, or git.",
+			"code":  "Write, edit, refactor, or debug source code.",
+			"cloud": "Hard architecture problems: distributed systems design, deadlocks, race conditions, protocol redesign.",
 		}
 
 		vReq := vonRequest{
@@ -175,7 +179,7 @@ func (r *Router) RouteTurn(ctx context.Context, userPrompt string, availableTool
 			Questions: map[string]vonQuestion{
 				"intent": {
 					Type:         "choice",
-					Instructions: "Determine which specialized engine should handle the user request.",
+					Instructions: "Which engine should handle this user message?",
 					Criteria:     criteria,
 				},
 			},
@@ -194,8 +198,8 @@ func (r *Router) RouteTurn(ctx context.Context, userPrompt string, availableTool
 						ans, ok := vResp.Answers["intent"]
 						if ok && ans.Choice != "" {
 							targetRole := ans.Choice
-							confidence := 0.85
-							if c, exists := ans.Probabilities[targetRole]; exists {
+							confidence := ans.Confidence
+							if c, exists := ans.Probabilities[targetRole]; confidence <= 0 && exists {
 								confidence = c
 							}
 

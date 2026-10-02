@@ -187,7 +187,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	// Ping Von
 	vonOnline := false
-	vResp, vErr := s.httpClient.Get(strings.Replace(s.cfg.Roles.Router.Endpoint, "/v1/systemone", "/v1/health", 1))
+	vResp, vErr := s.httpClient.Get(strings.Replace(s.cfg.Roles.Router.Endpoint, "/v1/systemone", "/health", 1))
 	if vErr == nil && (vResp.StatusCode == http.StatusOK || vResp.StatusCode == http.StatusNotFound || vResp.StatusCode == 422) {
 		vonOnline = true
 		vResp.Body.Close()
@@ -200,12 +200,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":       status,
-		"orchestrator": "meepo",
-		"version":      "0.1.0",
-		"llamaOnline":    llamaOnline,
-		"vonOnline":      vonOnline,
-		"warmupPrefill":  s.cfg.Policy.WarmupPrefill,
+		"status":        status,
+		"orchestrator":  "meepo",
+		"version":       "0.1.0",
+		"llamaOnline":   llamaOnline,
+		"vonOnline":     vonOnline,
+		"warmupPrefill": s.cfg.Policy.WarmupPrefill,
 	})
 }
 
@@ -473,6 +473,11 @@ func isExecutableShellCommand(cmd string) bool {
 	}
 	return knownCommands[firstWord]
 }
+
+// noThinking disables the chat template's reasoning block for llama.cpp
+// (--jinja). Used on turns where chain-of-thought only adds latency.
+var noThinking = map[string]interface{}{"enable_thinking": false}
+
 func (s *Server) maxTokensForRole(role config.ModelRoleConfig, clientMaxTokens *int) int {
 	quarter := int(float64(role.ContextWindow) * 0.25)
 	if quarter <= 0 {
@@ -505,9 +510,11 @@ func (s *Server) formatWithGemma(ctx context.Context, userPrompt, brainContent s
 				"content": brainContent,
 			},
 		},
-		"max_tokens":  maxTokens,
-		"temperature": 0.3,
-		"stream":      false,
+		// Rewording an already-solved answer is not a reasoning task.
+		"chat_template_kwargs": noThinking,
+		"max_tokens":           maxTokens,
+		"temperature":          0.3,
+		"stream":               false,
 	}
 	b, err := json.Marshal(reqBody)
 	if err != nil {
@@ -712,15 +719,20 @@ func extractLastUserPrompt(messages []ChatMessage) string {
 }
 
 func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Request, req ChatCompletionRequest) {
-	// 0. Auxiliate with Von System One reflex (<25ms)
+	// 0. Von System One reflex. Only classify fresh user turns: on tool-result
+	// continuations the intent is already settled (the brain is mid-loop), so
+	// re-querying Von on the same user prompt burns ~400-700ms per iteration.
 	var availableTools []string
 	for _, t := range req.Tools {
 		availableTools = append(availableTools, t.Function.Name)
 	}
 	userPrompt := extractLastUserPrompt(req.Messages)
-	decision := s.router.RouteTurn(r.Context(), userPrompt, availableTools)
+	var decision router.RoutingDecision
+	if len(req.Messages) == 0 || req.Messages[len(req.Messages)-1].Role != "tool" {
+		decision = s.router.RouteTurn(r.Context(), userPrompt, availableTools)
+	}
 	var vonTrace string
-	if decision.TargetRole != "" && decision.Confidence > 0 {
+	if decision.TargetRole != "" {
 		vonTrace = fmt.Sprintf("[Von System One]: intent=%s (confidence: %.2f via %s)\n", decision.TargetRole, decision.Confidence, decision.Source)
 	}
 
@@ -777,8 +789,12 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 			},
 		}
 	}
-	// 2. Select Worker Brain (Qwen 3.5 2B) or Chat (Gemma for pure small talk)
-	isPureChat := decision.TargetRole == "chat" && decision.Confidence >= 0.75 && len(req.Tools) == 0
+	// 2. Select Worker Brain (Qwen 3.5 2B) or Chat (Gemma for pure small talk).
+	// Gate on Von's measured 0.80 threshold (92% kept-accuracy). Do not gate on
+	// len(req.Tools): harnesses like Pi send tools on every turn, which made
+	// this fast path unreachable and forced greetings through Qwen + Gemma.
+	isPureChat := decision.TargetRole == "chat" && decision.Confidence >= 0.80
+	log.Printf("[meepo] route: von=%s conf=%.2f src=%s latency=%dms pureChat=%v", decision.TargetRole, decision.Confidence, decision.Source, decision.LatencyMs, isPureChat)
 
 	var targetModel string
 	var forwardedTools []Tool
@@ -877,6 +893,12 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 	}
 	if req.Temperature != nil {
 		forwardedMap["temperature"] = req.Temperature
+	}
+	if isPureChat {
+		// Small talk needs no chain-of-thought. Measured on Gemma-4-E2B: "hi"
+		// drops from 200 truncated reasoning tokens (10.7s, empty content) to
+		// 11 content tokens (0.5s).
+		forwardedMap["chat_template_kwargs"] = noThinking
 	}
 	if req.MaxCompletionTokens != nil {
 		forwardedMap["max_completion_tokens"] = req.MaxCompletionTokens

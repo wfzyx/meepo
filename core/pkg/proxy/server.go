@@ -439,6 +439,21 @@ func sanitizeTaskCommand(task string) string {
 	return cmd
 }
 
+func isExecutableShellCommand(cmd string) bool {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	prosePrefixes := []string{"check ", "inspect ", "get ", "find ", "what ", "how ", "can ", "please ", "show ", "tell "}
+	for _, p := range prosePrefixes {
+		if strings.HasPrefix(lower, p) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationalTools []Tool) (map[string]interface{}, error) {
 	cleanedTask := sanitizeTaskCommand(task)
 	reqBody := map[string]interface{}{
@@ -446,7 +461,7 @@ func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationa
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are meepo-tools, an expert Linux system administrator and execution engine. Translate the user goal into the most effective Linux terminal command or tool call (e.g. bash, read, write, edit) to achieve the goal. Always call the appropriate tool immediately without conversational filler.",
+				"content": "You are a Linux execution agent. You only interact with the system by calling tools. To inspect system state, memory, CPU, disks, or processes, run standard shell commands using the `bash` tool (for example: `free -h`, `vmstat`, `cat /proc/meminfo`, `top -b -n 1`, `lscpu`, `ps aux`, `ls -la`). Never apologize or say you cannot do it; always call the appropriate tool immediately.",
 			},
 			{
 				"role":    "user",
@@ -907,17 +922,22 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 						return
 					}
 					// Fallback: bash execution
-					argsJSON, _ := json.Marshal(map[string]string{"command": task})
-					fallbackCall := map[string]interface{}{
-						"id":   fmt.Sprintf("call_%d", time.Now().UnixNano()),
-						"type": "function",
-						"function": map[string]interface{}{
-							"name":      "bash",
-							"arguments": string(argsJSON),
-						},
+					if isExecutableShellCommand(task) {
+						argsJSON, _ := json.Marshal(map[string]string{"command": task})
+						fallbackCall := map[string]interface{}{
+							"id":   fmt.Sprintf("call_%d", time.Now().UnixNano()),
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "bash",
+								"arguments": string(argsJSON),
+							},
+						}
+						sendReasoningChunk(w, flusher, fmt.Sprintf("[meepo-tools]: Executing raw command in bash: %s\n\n", task))
+						sendToolCallChunk(w, flusher, fallbackCall)
+						return
 					}
-					sendReasoningChunk(w, flusher, fmt.Sprintf("[meepo-tools]: Fallback direct bash: %s\n\n", task))
-					sendToolCallChunk(w, flusher, fallbackCall)
+					sendReasoningChunk(w, flusher, fmt.Sprintf("[meepo-tools]: Task is natural language (%q) but no tool call generated\n\n", task))
+					sendContentChunk(w, flusher, fmt.Sprintf("meepo-tools was unable to execute: %s", task))
 					return
 				} else if toolCallName == "meepo_code" {
 					var argsObj map[string]interface{}

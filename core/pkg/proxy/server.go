@@ -412,31 +412,10 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Strip System Message Bloat (Skills, Docs, Distractor tool text)
-	skillsRegex := regexp.MustCompile(`(?s)<skills>.*?</skills>`)
-	docsRegex := regexp.MustCompile(`(?s)<docs>.*?</docs>`)
-	toolsRegex := regexp.MustCompile(`(?s)<tools>.*?</tools>`)
-
+	// 3. Strip System Message Bloat (Skills, Docs, Distractor tool text)
 	for i := range req.Messages {
-		if i == 0 && req.Messages[i].Role == "system" {
-			var rawStr string
-			if err := json.Unmarshal(req.Messages[i].Content, &rawStr); err == nil {
-				cleaned := skillsRegex.ReplaceAllString(rawStr, "")
-				cleaned = docsRegex.ReplaceAllString(cleaned, "")
-				if strings.Contains(cleaned, "<tools>") {
-					if len(prunedTools) > 0 {
-						var tLines []string
-						for _, t := range prunedTools {
-							tLines = append(tLines, fmt.Sprintf("- %s: %s", t.Function.Name, t.Function.Description))
-						}
-						cleaned = toolsRegex.ReplaceAllString(cleaned, fmt.Sprintf("<tools>\n%s\n</tools>", strings.Join(tLines, "\n")))
-					} else {
-						cleaned = toolsRegex.ReplaceAllString(cleaned, "")
-					}
-				}
-				newContent, _ := json.Marshal(strings.TrimSpace(cleaned))
-				req.Messages[i].Content = newContent
-			}
-			break
+		if req.Messages[i].Role == "system" || req.Messages[i].Role == "developer" {
+			req.Messages[i].Content = cleanSystemContent(req.Messages[i].Content, prunedTools)
 		}
 	}
 
@@ -669,6 +648,55 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func cleanPromptString(text string, prunedTools []Tool) string {
+	skillsRegex := regexp.MustCompile(`(?s)<skills>.*?</skills>`)
+	availSkillsRegex := regexp.MustCompile(`(?s)<available_skills>.*?</available_skills>`)
+	docsRegex := regexp.MustCompile(`(?s)<docs>.*?</docs>`)
+	toolsRegex := regexp.MustCompile(`(?s)<tools>.*?</tools>`)
+
+	cleaned := skillsRegex.ReplaceAllString(text, "")
+	cleaned = availSkillsRegex.ReplaceAllString(cleaned, "")
+	cleaned = docsRegex.ReplaceAllString(cleaned, "")
+
+	if strings.Contains(cleaned, "<tools>") {
+		if len(prunedTools) > 0 {
+			var tLines []string
+			for _, t := range prunedTools {
+				tLines = append(tLines, fmt.Sprintf("- %s: %s", t.Function.Name, t.Function.Description))
+			}
+			cleaned = toolsRegex.ReplaceAllString(cleaned, fmt.Sprintf("<tools>\n%s\n</tools>", strings.Join(tLines, "\n")))
+		} else {
+			cleaned = toolsRegex.ReplaceAllString(cleaned, "")
+		}
+	}
+	return strings.TrimSpace(cleaned)
+}
+
+func cleanSystemContent(raw json.RawMessage, prunedTools []Tool) json.RawMessage {
+	// 1. Try as direct string
+	var rawStr string
+	if err := json.Unmarshal(raw, &rawStr); err == nil {
+		cleaned := cleanPromptString(rawStr, prunedTools)
+		newContent, _ := json.Marshal(cleaned)
+		return newContent
+	}
+
+	// 2. Try as array of content blocks (used by Pi for structured transcripts)
+	var blocks []map[string]interface{}
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		for i := range blocks {
+			if t, ok := blocks[i]["type"].(string); ok && t == "text" {
+				if txt, ok := blocks[i]["text"].(string); ok {
+					blocks[i]["text"] = cleanPromptString(txt, prunedTools)
+				}
+			}
+		}
+		newContent, _ := json.Marshal(blocks)
+		return newContent
+	}
+
+	return raw
+}
 func extractUserPrompt(messages []ChatMessage) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {

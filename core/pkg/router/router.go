@@ -39,7 +39,7 @@ func NewRouter(cfg *config.Config) *Router {
 	return &Router{
 		cfg: cfg,
 		httpClient: &http.Client{
-			Timeout: 500 * time.Millisecond,
+			Timeout: 1500 * time.Millisecond,
 		},
 	}
 }
@@ -59,7 +59,7 @@ func (r *Router) CalculateToolPruning(targetRole string, availableTools []string
 	}
 
 	roleAllowMap := map[string][]string{
-		"chat":  {"read", "web_search", "web_fetch", "ask"},
+		"chat":  {"codemode", "bash", "read", "web_search", "web_fetch", "ask"},
 		"tools": {"codemode", "bash", "read", "write", "edit", "undo_last_edit"},
 		"code":  {"codemode", "read", "edit", "write"},
 		"cloud": {"codemode", "ask", "read"},
@@ -126,7 +126,12 @@ func (r *Router) HeuristicClassify(prompt string) string {
 	}
 
 	// Operational tools triggers
-	opsKeywords := []string{"run", "bash", "exec", "terminal", "command", "check disk", "git", "status", "ps aux", "ls", "grep", "curl"}
+	opsKeywords := []string{
+		"run", "bash", "exec", "terminal", "command", "check disk", "git", "status",
+		"ps aux", "ls", "grep", "curl", "fetch", "fastfetch", "neofetch", "sysinfo",
+		"hardware", "memory", "throughput", "bandwidth", "specs", "cpu", "ram", "lscpu",
+		"free -m", "disk", "find", "cat", "tail", "head",
+	}
 	for _, kw := range opsKeywords {
 		if strings.Contains(p, kw) {
 			return "tools"
@@ -160,7 +165,7 @@ func (r *Router) RouteTurn(ctx context.Context, userPrompt string, availableTool
 	if r.cfg.Roles.Router.Enabled {
 		criteria := map[string]string{
 			"chat":  "General conversation, chit-chat, asking to retry, follow-up clarification, explanation",
-			"tools": "Terminal shell command execution, finding files, searching directories, running bash, command-line operations",
+			"tools": "Terminal shell command execution, checking system info or hardware, finding files, searching directories, running bash, command-line operations",
 			"code":  "Writing code, editing files, refactoring a function, implementing an algorithm, syntax bug fix",
 			"cloud": "Hard architectural system redesign, deadlock analysis, multi-threaded race condition, memory leak investigation",
 		}

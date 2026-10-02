@@ -67,3 +67,85 @@ func TestServerEndpoints(t *testing.T) {
 		t.Errorf("expected 200, got %d", cResp.StatusCode)
 	}
 }
+
+func TestCleanSystemContent(t *testing.T) {
+	prunedTools := []Tool{
+		{
+			Type: "function",
+			Function: FunctionDefinition{
+				Name:        "bash",
+				Description: "Run shell commands",
+			},
+		},
+	}
+
+	rawText := `You are an agent.
+<tools>
+- read: Read files
+- bash: Run shell commands
+- edit: Edit files
+- custom_tool: Some custom tool
+</tools>
+<docs>
+Heavy documentation text
+</docs>
+<skills>
+Skill definitions here
+</skills>
+<available_skills>
+More skill info
+</available_skills>
+<rules>
+Rule 1
+Rule 2
+</rules>`
+
+	// 1. Test string format
+	strBytes, _ := json.Marshal(rawText)
+	cleanedStrBytes := cleanSystemContent(strBytes, prunedTools)
+	var cleanedStr string
+	if err := json.Unmarshal(cleanedStrBytes, &cleanedStr); err != nil {
+		t.Fatalf("failed to unmarshal cleaned string: %v", err)
+	}
+
+	if bytes.Contains([]byte(cleanedStr), []byte("<skills>")) {
+		t.Errorf("cleaned string still contains <skills>")
+	}
+	if bytes.Contains([]byte(cleanedStr), []byte("<available_skills>")) {
+		t.Errorf("cleaned string still contains <available_skills>")
+	}
+	if bytes.Contains([]byte(cleanedStr), []byte("<docs>")) {
+		t.Errorf("cleaned string still contains <docs>")
+	}
+	if !bytes.Contains([]byte(cleanedStr), []byte("- bash: Run shell commands")) {
+		t.Errorf("cleaned string missing pruned bash tool")
+	}
+	if bytes.Contains([]byte(cleanedStr), []byte("- edit: Edit files")) {
+		t.Errorf("cleaned string should have pruned edit tool")
+	}
+
+	// 2. Test block format (as sent by Pi)
+	blocks := []map[string]interface{}{
+		{"type": "text", "text": rawText},
+	}
+	blocksBytes, _ := json.Marshal(blocks)
+	cleanedBlockBytes := cleanSystemContent(blocksBytes, prunedTools)
+	var cleanedBlocks []map[string]interface{}
+	if err := json.Unmarshal(cleanedBlockBytes, &cleanedBlocks); err != nil {
+		t.Fatalf("failed to unmarshal cleaned blocks: %v", err)
+	}
+
+	if len(cleanedBlocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(cleanedBlocks))
+	}
+	bText := cleanedBlocks[0]["text"].(string)
+	if bytes.Contains([]byte(bText), []byte("<skills>")) {
+		t.Errorf("cleaned block still contains <skills>")
+	}
+	if bytes.Contains([]byte(bText), []byte("<docs>")) {
+		t.Errorf("cleaned block still contains <docs>")
+	}
+	if !bytes.Contains([]byte(bText), []byte("- bash: Run shell commands")) {
+		t.Errorf("cleaned block missing pruned bash tool")
+	}
+}

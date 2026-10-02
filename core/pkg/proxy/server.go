@@ -699,16 +699,19 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 			Type: "function",
 			Function: FunctionDefinition{
 				Name:        "meepo_tools",
-				Description: "Delegate shell commands, terminal tools, system inspection, or filesystem operations to meepo-tools (LFM). State the operational goal or task clearly (e.g. 'check available memory and swap', 'inspect port 8080', 'read package.json', 'run tests'). LFM will autonomously select and run the appropriate tools.",
+				Description: "Delegate shell commands, terminal tools, system inspection, or filesystem operations to meepo-tools (LFM). State the command to execute (e.g. 'lscpu', 'free -h', 'cat /proc/cpuinfo') or the operational task clearly. LFM will execute the appropriate tools.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
+						"command": map[string]interface{}{
+							"type":        "string",
+							"description": "The shell command to execute",
+						},
 						"task": map[string]interface{}{
 							"type":        "string",
-							"description": "Operational goal, inspection task, or command",
+							"description": "Operational goal or inspection task",
 						},
 					},
-					"required": []string{"task"},
 				},
 			},
 		},
@@ -752,17 +755,14 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 		},
 	}
 
-	// Also give Frontman direct access to operational tools from req.Tools (bash, read, etc.)
-	// so the model can breathe and act directly without being artificially restricted.
-	existingNames := map[string]bool{"meepo_tools": true, "meepo_code": true, "meepo_cloud": true}
+	// Chat only has tools to invoke other meepos (sub-brains) plus conversational tools (ask)
 	for _, t := range req.Tools {
-		if !existingNames[t.Function.Name] {
+		if t.Function.Name == "ask" {
 			frontmanTools = append(frontmanTools, t)
-			existingNames[t.Function.Name] = true
 		}
 	}
 	// 3. Clean system messages and append Frontman Directive
-	frontmanDirective := "\n\n[Meepo Mesh Mode]:\nYou are the intelligent assistant for the Meepo Multi-Brain mesh. You have direct access to system tools (bash, file inspection) and specialist sub-brains (meepo_tools for automated terminal tasks, meepo_code for code synthesis, meepo_cloud for deep architectural dilemmas).\n- When asked about system performance, memory throughput/bandwidth, hardware specs, or environment: inspect the machine architecture and processor specs (e.g. lscpu, /proc/cpuinfo, free -h) using your tools.\n- Multi-step investigation: If a tool result does not give you enough data to determine the answer (e.g. free only shows RAM capacity, but the user asked for memory throughput/bandwidth), DO NOT STOP! Execute follow-up tools (e.g. lscpu or hardware checks) to inspect the processor and memory architecture.\n- Memory throughput (bandwidth) on modern systems is determined by the CPU memory controller architecture and RAM configuration. On Intel 11th Gen platforms with dual-channel DDR4-3200 / LPDDR4x, memory throughput is roughly 40~50 GB/s (up to 51.2 GB/s theoretical peak). Report this calculated throughput range clearly.\n- Synthesize and present the factual answer cleanly to the user."
+	frontmanDirective := "\n\n[Meepo Mesh Mode]:\nYou are the conversational frontman for the Meepo Multi-Brain mesh. The user speaks directly to you. You do not execute tools directly; the only tools you have are to invoke your specialist sub-brains:\n- For terminal commands, system stats, files, or environment tasks: call meepo_tools with the command or task to execute.\n- For code generation, writing algorithms, or refactoring: call meepo_code.\n- For deep architectural dilemmas, deadlocks, or race conditions: call meepo_cloud.\n- Multi-step investigation: If a tool result does not give you enough data to determine the answer (e.g. free only shows RAM capacity, but the user asked for memory throughput/bandwidth), DO NOT STOP! Execute follow-up tools via meepo_tools (e.g. lscpu or hardware checks) to inspect the processor and memory architecture.\n- Memory throughput (bandwidth) on modern systems is determined by the CPU memory controller architecture and RAM configuration. On Intel 11th Gen platforms with dual-channel DDR4-3200 / LPDDR4x, memory throughput is roughly 40~50 GB/s (up to 51.2 GB/s theoretical peak). Report this calculated throughput range clearly.\n- When you receive tool results from your sub-brains, synthesize and present the factual answer cleanly to the user in your persona."
 
 	if decision.TargetRole != "" && decision.TargetRole != "chat" && decision.Confidence >= 0.70 {
 		frontmanDirective += fmt.Sprintf("\n[System One Reflex]: Primary intent detected as '%s' (confidence: %.2f). If user needs action in this domain, delegate to the corresponding specialist.", decision.TargetRole, decision.Confidence)

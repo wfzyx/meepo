@@ -57,7 +57,7 @@ func (s *Server) Start(addr string) error {
 	}
 
 	if s.cfg.Policy.WarmupPrefill {
-		go s.WarmupAllRoles()
+		go s.WarmupFrontman()
 	}
 	return s.httpServer.ListenAndServe()
 }
@@ -109,7 +109,7 @@ func (s *Server) handleWarmup(w http.ResponseWriter, r *http.Request) {
 			}
 			s.WarmupModel(req.Model, sys)
 		} else {
-			s.WarmupAllRoles()
+			s.WarmupFrontman()
 		}
 	}()
 
@@ -121,39 +121,14 @@ func (s *Server) handleWarmup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) WarmupAllRoles() {
+func (s *Server) WarmupFrontman() {
 	time.Sleep(1 * time.Second) // wait for server listener and llama-server
-	log.Printf("[meepo] Initiating KV cache prefill warmup for active roles...")
-
-	roles := []struct {
-		role    string
-		model   string
-		sysText string
-	}{
-		{
-			role:    "chat",
-			model:   s.cfg.Roles.Chat.ModelID,
-			sysText: "You are a concise, helpful coding assistant and frontman.",
-		},
-		{
-			role:    "tools",
-			model:   s.cfg.Roles.Tools.ModelID,
-			sysText: "You are an autonomous operational tool execution engine.",
-		},
-		{
-			role:    "code",
-			model:   s.cfg.Roles.Code.ModelID,
-			sysText: "You are an expert code generation and patch synthesis engine.",
-		},
+	if s.cfg.Roles.Chat.ModelID == "" {
+		return
 	}
-
-	for _, r := range roles {
-		if r.model == "" {
-			continue
-		}
-		s.WarmupModel(r.model, r.sysText)
-	}
-	log.Printf("[meepo] KV cache prefill warmup complete.")
+	log.Printf("[meepo] Initiating KV cache prefill warmup for frontman (%s)...", s.cfg.Roles.Chat.ModelID)
+	s.WarmupModel(s.cfg.Roles.Chat.ModelID, "You are a concise, helpful coding assistant and frontman.")
+	log.Printf("[meepo] Frontman KV cache prefill warmup complete.")
 }
 
 func (s *Server) WarmupModel(modelID, sysPrompt string) {

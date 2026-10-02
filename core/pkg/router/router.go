@@ -59,7 +59,7 @@ func (r *Router) CalculateToolPruning(targetRole string, availableTools []string
 	}
 
 	roleAllowMap := map[string][]string{
-		"chat":  {"codemode", "bash", "read", "web_search", "web_fetch", "ask"},
+		"chat":  {"read", "web_search", "web_fetch", "ask"},
 		"tools": {"codemode", "bash", "read", "write", "edit", "undo_last_edit"},
 		"code":  {"codemode", "read", "edit", "write"},
 		"cloud": {"codemode", "ask", "read"},
@@ -164,10 +164,10 @@ func (r *Router) RouteTurn(ctx context.Context, userPrompt string, availableTool
 
 	if r.cfg.Roles.Router.Enabled {
 		criteria := map[string]string{
-			"chat":  "General conversation, chit-chat, asking to retry, follow-up clarification, explanation",
-			"tools": "Terminal shell command execution, checking system info or hardware, finding files, searching directories, running bash, command-line operations",
-			"code":  "Writing code, editing files, refactoring a function, implementing an algorithm, syntax bug fix",
-			"cloud": "Hard architectural system redesign, deadlock analysis, multi-threaded race condition, memory leak investigation",
+			"chat":  "General conversation, explaining concepts, answering conceptual questions, high-level guidance, or summarizing information.",
+			"tools": "Autonomous tool execution: running shell commands, bash terminal tasks, checking system info or hardware stats, git operations, filesystem exploration.",
+			"code":  "Code implementation, writing or editing functions, refactoring files, implementing algorithms, fixing syntax bugs, or AST patches.",
+			"cloud": "High-level distributed systems architecture, concurrency deadlock analysis, multi-threaded race conditions, core protocol redesign.",
 		}
 
 		vReq := vonRequest{
@@ -175,7 +175,7 @@ func (r *Router) RouteTurn(ctx context.Context, userPrompt string, availableTool
 			Questions: map[string]vonQuestion{
 				"intent": {
 					Type:         "choice",
-					Instructions: "Classify user intent to the single optimal brain role.",
+					Instructions: "Determine which specialized engine should handle the user request.",
 					Criteria:     criteria,
 				},
 			},

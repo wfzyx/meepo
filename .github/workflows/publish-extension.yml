@@ -1,0 +1,73 @@
+name: Publish Extension to npm
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "extension/**"
+      - ".github/workflows/publish-extension.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (build and test only; do not publish)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    working-directory: extension
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Update npm CLI for native OIDC Trusted Publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check registry version
+        id: check
+        run: |
+          set -euo pipefail
+          PKG=$(node -p "require('./package.json').version")
+          echo "Target package version: $PKG"
+          if npm view "pi-meepo@$PKG" version >/dev/null 2>&1; then
+            echo "::notice::pi-meepo@$PKG is already published on npm; skipping publish step."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::pi-meepo@$PKG is new; proceeding with release."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build extension
+        run: bun run build
+
+      - name: Run unit tests
+        run: bun test
+
+      - name: Publish to npm via OIDC
+        if: steps.check.outputs.skip == 'false' && (github.event_name != 'workflow_dispatch' || inputs.dry_run == false)
+        run: |
+          set -euo pipefail
+          npm publish --access public --provenance

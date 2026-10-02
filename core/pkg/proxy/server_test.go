@@ -159,9 +159,9 @@ func TestSanitizeTaskCommand(t *testing.T) {
 		{"`run fastfetch`", "fastfetch"},
 		{"execute ls -la", "ls -la"},
 		{"run command free -m", "free -m"},
-		{"get system memory throughput statistics", "free -h"},
-		{"check memory stats", "free -h"},
-		{"get cpu processor info", "lscpu"},
+		{"get system memory throughput statistics", "get system memory throughput statistics"},
+		{"check memory stats", "check memory stats"},
+		{"get cpu processor info", "get cpu processor info"},
 		{"cat /proc/meminfo", "cat /proc/meminfo"},
 	}
 

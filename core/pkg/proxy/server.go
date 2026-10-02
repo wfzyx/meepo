@@ -456,16 +456,21 @@ func isExecutableShellCommand(cmd string) bool {
 
 func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationalTools []Tool) (map[string]interface{}, error) {
 	cleanedTask := sanitizeTaskCommand(task)
+	lfmUserPrompt := cleanedTask
+	if !strings.HasPrefix(strings.ToLower(lfmUserPrompt), "use bash") {
+		lfmUserPrompt = "Use bash to: " + cleanedTask
+	}
+
 	reqBody := map[string]interface{}{
 		"model": s.cfg.Roles.Tools.ModelID,
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a Linux execution agent. You only interact with the system by calling tools. To inspect system state, memory, CPU, disks, or processes, run standard shell commands using the `bash` tool (for example: `free -h`, `vmstat`, `cat /proc/meminfo`, `top -b -n 1`, `lscpu`, `ps aux`, `ls -la`). Never apologize or say you cannot do it; always call the appropriate tool immediately.",
+				"content": "You are a Linux execution agent. You only interact with the system by calling tools. Always execute the requested task by invoking the bash tool with the appropriate command. Never refuse or provide conversational responses; always invoke a tool.",
 			},
 			{
 				"role":    "user",
-				"content": cleanedTask,
+				"content": lfmUserPrompt,
 			},
 		},
 		"tools":       operationalTools,
@@ -654,7 +659,43 @@ func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Reques
 			operationalTools = append(operationalTools, t)
 		}
 	}
-
+	if len(operationalTools) == 0 {
+		operationalTools = []Tool{
+			{
+				Type: "function",
+				Function: FunctionDefinition{
+					Name:        "bash",
+					Description: "Execute a bash command in the terminal",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"command": map[string]interface{}{
+								"type":        "string",
+								"description": "The command string to execute in bash",
+							},
+						},
+						"required": []string{"command"},
+					},
+				},
+			},
+			{
+				Type: "function",
+				Function: FunctionDefinition{
+					Name:        "read",
+					Description: "Read file content",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"path": map[string]interface{}{
+								"type": "string",
+							},
+						},
+						"required": []string{"path"},
+					},
+				},
+			},
+		}
+	}
 	// 2. Frontman meta-tools exposed to Gemma
 	frontmanTools := []Tool{
 		{

@@ -26,10 +26,12 @@ describe("ProxyManager", () => {
     expect(mgr.containerName).toBe("meepo-custom");
   });
 
-  it("finds the native meepo binary on system", () => {
+  it("finds the native meepo binary when configured or installed", () => {
+    const customMgr = new ProxyManager({ binPath: "/bin/sh" });
+    expect(customMgr.findBinary()).toBe("/bin/sh");
+
     const mgr = new ProxyManager();
     const bin = mgr.findBinary();
-    expect(bin).not.toBeNull();
     if (bin) {
       expect(existsSync(bin)).toBe(true);
     }

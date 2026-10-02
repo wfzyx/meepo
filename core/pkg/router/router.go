@@ -60,11 +60,10 @@ func (r *Router) CalculateToolPruning(targetRole string, availableTools []string
 
 	roleAllowMap := map[string][]string{
 		"chat":  {"read", "web_search", "web_fetch", "ask"},
-		"tools": {"bash", "read", "write", "edit", "undo_last_edit"},
-		"code":  {"read", "edit", "write"},
-		"cloud": {"ask", "read"},
+		"tools": {"codemode", "bash", "read", "write", "edit", "undo_last_edit"},
+		"code":  {"codemode", "read", "edit", "write"},
+		"cloud": {"codemode", "ask", "read"},
 	}
-
 	allowedNames := roleAllowMap[targetRole]
 	allowSet := make(map[string]bool)
 	for _, a := range allowedNames {
@@ -112,7 +111,7 @@ func (r *Router) HeuristicClassify(prompt string) string {
 	}
 
 	// Code engine triggers
-	codeKeywords := []string{"implement", "refactor", "function", "write code", "fix bug", "patch", "syntax", "unit test", "diff"}
+	codeKeywords := []string{"implement", "refactor", "function", "write code", "fix bug", "patch", "syntax", "unit test", "diff", "codemode", "script"}
 	codeExtensions := []string{".ts", ".js", ".go", ".py", ".rs", ".cpp", ".json"}
 
 	for _, kw := range codeKeywords {

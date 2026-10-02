@@ -149,3 +149,26 @@ Rule 2
 		t.Errorf("cleaned block missing pruned bash tool")
 	}
 }
+
+func TestSanitizeTaskCommand(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"run fastfetch", "fastfetch"},
+		{"`run fastfetch`", "fastfetch"},
+		{"execute ls -la", "ls -la"},
+		{"run command free -m", "free -m"},
+		{"get system memory throughput statistics", "free -h"},
+		{"check memory stats", "free -h"},
+		{"get cpu processor info", "lscpu"},
+		{"cat /proc/meminfo", "cat /proc/meminfo"},
+	}
+
+	for _, tc := range tests {
+		got := sanitizeTaskCommand(tc.input)
+		if got != tc.expected {
+			t.Errorf("sanitizeTaskCommand(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+	}
+}

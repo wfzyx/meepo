@@ -207,6 +207,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		"object": "list",
 		"data": []map[string]interface{}{
 			{
+				"id":           "meepo",
+				"object":       "model",
+				"created":      1733234400,
+				"owned_by":     "meepo",
+				"status":       map[string]string{"value": "loaded"},
+				"architecture": map[string]interface{}{"input_modalities": []string{"text", "image"}, "output_modalities": []string{"text"}},
+				"meta":         map[string]int{"n_ctx": 131072, "n_ctx_train": 131072},
+			},
+			{
 				"id":           "mesh",
 				"object":       "model",
 				"created":      1733234400,
@@ -214,42 +223,6 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 				"status":       map[string]string{"value": "loaded"},
 				"architecture": map[string]interface{}{"input_modalities": []string{"text", "image"}, "output_modalities": []string{"text"}},
 				"meta":         map[string]int{"n_ctx": 131072, "n_ctx_train": 131072},
-			},
-			{
-				"id":           "chat",
-				"object":       "model",
-				"created":      1733234400,
-				"owned_by":     "meepo",
-				"status":       map[string]string{"value": "loaded"},
-				"architecture": map[string]interface{}{"input_modalities": []string{"text", "image"}, "output_modalities": []string{"text"}},
-				"meta":         map[string]int{"n_ctx": 131072, "n_ctx_train": 131072},
-			},
-			{
-				"id":           "tools",
-				"object":       "model",
-				"created":      1733234400,
-				"owned_by":     "meepo",
-				"status":       map[string]string{"value": "loaded"},
-				"architecture": map[string]interface{}{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
-				"meta":         map[string]int{"n_ctx": 32768, "n_ctx_train": 32768},
-			},
-			{
-				"id":           "code",
-				"object":       "model",
-				"created":      1733234400,
-				"owned_by":     "meepo",
-				"status":       map[string]string{"value": "loaded"},
-				"architecture": map[string]interface{}{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
-				"meta":         map[string]int{"n_ctx": 32768, "n_ctx_train": 32768},
-			},
-			{
-				"id":           "cloud",
-				"object":       "model",
-				"created":      1733234400,
-				"owned_by":     "meepo",
-				"status":       map[string]string{"value": "loaded"},
-				"architecture": map[string]interface{}{"input_modalities": []string{"text"}, "output_modalities": []string{"text"}},
-				"meta":         map[string]int{"n_ctx": 200000, "n_ctx_train": 200000},
 			},
 		},
 	})
@@ -283,7 +256,7 @@ func (s *Server) handleModelsSSE(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	fmt.Fprintf(w, "data: {\"model\":\"mesh\",\"event\":\"model_status\",\"data\":{\"status\":\"loaded\"}}\n\n")
+	fmt.Fprintf(w, "data: {\"model\":\"meepo\",\"event\":\"model_status\",\"data\":{\"status\":\"loaded\"}}\n\n")
 	if ok {
 		flusher.Flush()
 	}
@@ -319,6 +292,589 @@ type ChatCompletionRequest struct {
 	AdditionalFields    json.RawMessage `json:"-"`
 }
 
+func sendToolCallChunk(w http.ResponseWriter, flusher http.Flusher, call map[string]interface{}) {
+	chunk1 := map[string]interface{}{
+		"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   "meepo",
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"delta": map[string]interface{}{
+					"role":       "assistant",
+					"tool_calls": []interface{}{call},
+				},
+				"finish_reason": nil,
+			},
+		},
+	}
+	b1, _ := json.Marshal(chunk1)
+	fmt.Fprintf(w, "data: %s\n\n", b1)
+
+	chunk2 := map[string]interface{}{
+		"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   "meepo",
+		"choices": []map[string]interface{}{
+			{
+				"index":         0,
+				"delta":         map[string]interface{}{},
+				"finish_reason": "tool_calls",
+			},
+		},
+	}
+	b2, _ := json.Marshal(chunk2)
+	fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", b2)
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+func sendContentChunk(w http.ResponseWriter, flusher http.Flusher, text string) {
+	chunk1 := map[string]interface{}{
+		"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   "meepo",
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"delta": map[string]interface{}{
+					"role":    "assistant",
+					"content": text,
+				},
+				"finish_reason": nil,
+			},
+		},
+	}
+	b1, _ := json.Marshal(chunk1)
+	fmt.Fprintf(w, "data: %s\n\n", b1)
+
+	chunk2 := map[string]interface{}{
+		"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   "meepo",
+		"choices": []map[string]interface{}{
+			{
+				"index":         0,
+				"delta":         map[string]interface{}{},
+				"finish_reason": "stop",
+			},
+		},
+	}
+	b2, _ := json.Marshal(chunk2)
+	fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", b2)
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+func appendDirective(raw json.RawMessage, directive string) json.RawMessage {
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		out, _ := json.Marshal(str + directive)
+		return out
+	}
+	var blocks []map[string]interface{}
+	if err := json.Unmarshal(raw, &blocks); err == nil && len(blocks) > 0 {
+		lastIdx := len(blocks) - 1
+		if txt, ok := blocks[lastIdx]["text"].(string); ok {
+			blocks[lastIdx]["text"] = txt + directive
+		}
+		out, _ := json.Marshal(blocks)
+		return out
+	}
+	return raw
+}
+
+func extractBashCommand(content string) string {
+	re := regexp.MustCompile("(?s)```(?:bash|sh)?\n(.*?)\n```")
+	matches := re.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	return ""
+}
+
+func (s *Server) dispatchMeepoTools(ctx context.Context, task string, operationalTools []Tool) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{
+		"model": s.cfg.Roles.Tools.ModelID,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are meepo-tools, an autonomous tool execution engine. Always call the appropriate tool immediately without commentary.",
+			},
+			{
+				"role":    "user",
+				"content": task,
+			},
+		},
+		"tools":       operationalTools,
+		"max_tokens":  250,
+		"temperature": 0.1,
+		"stream":      false,
+	}
+
+	b, _ := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", s.cfg.LlamaServer.BaseURL+"/chat/completions", bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var respMap map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&respMap); err != nil {
+		return nil, err
+	}
+
+	choices, _ := respMap["choices"].([]interface{})
+	if len(choices) > 0 {
+		firstChoice, _ := choices[0].(map[string]interface{})
+		msg, _ := firstChoice["message"].(map[string]interface{})
+
+		// Structured tool_calls
+		if tcs, ok := msg["tool_calls"].([]interface{}); ok && len(tcs) > 0 {
+			tcMap, _ := tcs[0].(map[string]interface{})
+			id, _ := tcMap["id"].(string)
+			if id == "" {
+				id = fmt.Sprintf("call_%d", time.Now().UnixNano())
+			}
+			fn, _ := tcMap["function"].(map[string]interface{})
+			name, _ := fn["name"].(string)
+			args, _ := fn["arguments"].(string)
+
+			return map[string]interface{}{
+				"id":   id,
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":      name,
+					"arguments": args,
+				},
+			}, nil
+		}
+
+		// Text fallback
+		if content, ok := msg["content"].(string); ok && content != "" {
+			if call, _ := extractToolCall(content); call != nil {
+				return call, nil
+			}
+			cmd := extractBashCommand(content)
+			if cmd != "" {
+				argsJSON, _ := json.Marshal(map[string]string{"command": cmd})
+				return map[string]interface{}{
+					"id":   fmt.Sprintf("call_%d", time.Now().UnixNano()),
+					"type": "function",
+					"function": map[string]interface{}{
+						"name":      "bash",
+						"arguments": string(argsJSON),
+					},
+				}, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("no tool call generated by meepo-tools")
+}
+
+func (s *Server) dispatchMeepoCode(ctx context.Context, language, task string) (string, error) {
+	reqBody := map[string]interface{}{
+		"model": s.cfg.Roles.Code.ModelID,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are meepo-code, a surgical code synthesis engine. Output clean, syntactically correct code without fluff.",
+			},
+			{
+				"role":    "user",
+				"content": fmt.Sprintf("Language: %s\nTask: %s", language, task),
+			},
+		},
+		"max_tokens":  2048,
+		"temperature": 0.2,
+		"stream":      false,
+	}
+
+	b, _ := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", s.cfg.LlamaServer.BaseURL+"/chat/completions", bytes.NewReader(b))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var respMap map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&respMap); err != nil {
+		return "", err
+	}
+
+	choices, _ := respMap["choices"].([]interface{})
+	if len(choices) > 0 {
+		firstChoice, _ := choices[0].(map[string]interface{})
+		msg, _ := firstChoice["message"].(map[string]interface{})
+		if content, ok := msg["content"].(string); ok {
+			return content, nil
+		}
+	}
+
+	return "", fmt.Errorf("no code generated by meepo-code")
+}
+
+func (s *Server) handleConductorCompletion(w http.ResponseWriter, r *http.Request, req ChatCompletionRequest) {
+	// 1. Separate operational tools (held for LFM) from conversational tools (safe for Gemma)
+	var operationalTools []Tool
+	for _, t := range req.Tools {
+		if t.Function.Name != "meepo_tools" && t.Function.Name != "meepo_code" && t.Function.Name != "meepo_cloud" {
+			operationalTools = append(operationalTools, t)
+		}
+	}
+
+	// 2. Frontman meta-tools exposed to Gemma
+	frontmanTools := []Tool{
+		{
+			Type: "function",
+			Function: FunctionDefinition{
+				Name:        "meepo_tools",
+				Description: "Delegate shell commands, terminal execution, system inspection, hardware stats, or filesystem reading/writing to the operational meepo-tools engine (LFM). State the exact command or action needed.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"task": map[string]interface{}{
+							"type":        "string",
+							"description": "Clear imperative instruction for the tools engine, e.g. 'run free -h to check memory' or 'run fastfetch' or 'read package.json'",
+						},
+					},
+					"required": []string{"task"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: FunctionDefinition{
+				Name:        "meepo_code",
+				Description: "Delegate code implementation, function writing, algorithms, or syntax refactoring to the meepo-code engine (Qwen).",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"language": map[string]interface{}{
+							"type":        "string",
+							"description": "Target programming language (e.g. go, typescript, python)",
+						},
+						"task": map[string]interface{}{
+							"type":        "string",
+							"description": "Exact implementation requirements or function specification",
+						},
+					},
+					"required": []string{"language", "task"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: FunctionDefinition{
+				Name:        "meepo_cloud",
+				Description: "Escalate complex distributed systems deadlocks, multi-threaded race conditions, or hard architectural dilemmas to the non-local Claude Opus model.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"problem": map[string]interface{}{
+							"type":        "string",
+							"description": "Clear statement of the architectural dilemma, deadlock, or race condition",
+						},
+					},
+					"required": []string{"problem"},
+				},
+			},
+		},
+	}
+
+	for _, t := range req.Tools {
+		if t.Function.Name == "ask" || t.Function.Name == "web_search" || t.Function.Name == "web_fetch" {
+			frontmanTools = append(frontmanTools, t)
+		}
+	}
+
+	// 3. Clean system messages and append Frontman Directive
+	frontmanDirective := "\n\n[Meepo Frontman Conductor Mode]:\nYou are Gemma 4, the conversational frontman for the Meepo Multi-Brain mesh. The user speaks directly to you.\nEvaluate user requests:\n- For general conversation, conceptual explanations, or questions: answer directly in your persona.\n- For shell commands, checking machine stats, inspecting the filesystem, or running terminal tools: delegate to meepo-tools via meepo_tools.\n- For code generation, writing algorithms, or refactoring: delegate to meepo-code via meepo_code.\n- When you receive tool execution results, synthesize and present the final answer to the user in your persona."
+
+	for i := range req.Messages {
+		if req.Messages[i].Role == "system" || req.Messages[i].Role == "developer" {
+			req.Messages[i].Content = cleanSystemContent(req.Messages[i].Content, frontmanTools)
+			req.Messages[i].Content = appendDirective(req.Messages[i].Content, frontmanDirective)
+		}
+	}
+
+	// 4. Build upstream request targeting Frontman (Gemma)
+	forwardedMap := map[string]interface{}{
+		"model":    s.cfg.Roles.Chat.ModelID,
+		"messages": req.Messages,
+		"tools":    frontmanTools,
+		"stream":   req.Stream,
+	}
+	if req.Temperature != nil {
+		forwardedMap["temperature"] = req.Temperature
+	}
+	if req.MaxTokens != nil {
+		forwardedMap["max_tokens"] = req.MaxTokens
+	}
+	if req.MaxCompletionTokens != nil {
+		forwardedMap["max_completion_tokens"] = req.MaxCompletionTokens
+	}
+
+	forwardedBytes, _ := json.Marshal(forwardedMap)
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), "POST", s.cfg.LlamaServer.BaseURL+"/chat/completions", bytes.NewReader(forwardedBytes))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	upstreamReq.Header.Set("Content-Type", "application/json")
+
+	upstreamResp, err := s.httpClient.Do(upstreamReq)
+	if err != nil {
+		http.Error(w, "Upstream llama-server error: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer upstreamResp.Body.Close()
+
+	if upstreamResp.StatusCode != http.StatusOK {
+		w.WriteHeader(upstreamResp.StatusCode)
+		io.Copy(w, upstreamResp.Body)
+		return
+	}
+
+	// 5A. Non-Streaming Handling
+	if !req.Stream {
+		var respMap map[string]interface{}
+		if err := json.NewDecoder(upstreamResp.Body).Decode(&respMap); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		choices, _ := respMap["choices"].([]interface{})
+		if len(choices) > 0 {
+			firstChoice, _ := choices[0].(map[string]interface{})
+			msg, _ := firstChoice["message"].(map[string]interface{})
+			toolCalls, _ := msg["tool_calls"].([]interface{})
+
+			if len(toolCalls) > 0 {
+				tcMap, _ := toolCalls[0].(map[string]interface{})
+				fn, _ := tcMap["function"].(map[string]interface{})
+				fnName, _ := fn["name"].(string)
+				argsStr, _ := fn["arguments"].(string)
+
+				if fnName == "meepo_tools" {
+					var argsObj map[string]interface{}
+					task := argsStr
+					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
+						if t, ok := argsObj["task"].(string); ok && t != "" {
+							task = t
+						}
+					}
+					lfmCall, err := s.dispatchMeepoTools(r.Context(), task, operationalTools)
+					if err == nil && lfmCall != nil {
+						msg["tool_calls"] = []interface{}{lfmCall}
+						firstChoice["finish_reason"] = "tool_calls"
+					}
+				} else if fnName == "meepo_code" {
+					var argsObj map[string]interface{}
+					lang := "code"
+					task := argsStr
+					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
+						if l, ok := argsObj["language"].(string); ok && l != "" {
+							lang = l
+						}
+						if t, ok := argsObj["task"].(string); ok && t != "" {
+							task = t
+						}
+					}
+					qwenCode, err := s.dispatchMeepoCode(r.Context(), lang, task)
+					if err == nil && qwenCode != "" {
+						msg["content"] = qwenCode
+						delete(msg, "tool_calls")
+						firstChoice["finish_reason"] = "stop"
+					}
+				} else if fnName == "meepo_cloud" {
+					var argsObj map[string]interface{}
+					problem := argsStr
+					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
+						if p, ok := argsObj["problem"].(string); ok && p != "" {
+							problem = p
+						}
+					}
+					verdict, err := s.consultCloudAdvisor(r.Context(), problem)
+					if err == nil && verdict != "" {
+						msg["content"] = verdict
+						delete(msg, "tool_calls")
+						firstChoice["finish_reason"] = "stop"
+					}
+				}
+			}
+		}
+
+		respMap["model"] = "meepo"
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(respMap)
+		return
+	}
+
+	// 5B. Streaming Handling
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, hasFlusher := w.(http.Flusher)
+	if hasFlusher {
+		flusher.Flush()
+	}
+
+	reader := bufio.NewReader(upstreamResp.Body)
+	var isToolCall bool
+	var toolCallName string
+	var toolCallID string
+	var toolCallArgs strings.Builder
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "data: ") {
+			continue
+		}
+
+		if trimmed == "data: [DONE]" {
+			if isToolCall {
+				argsStr := toolCallArgs.String()
+				if toolCallName == "meepo_tools" {
+					var argsObj map[string]interface{}
+					task := argsStr
+					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
+						if t, ok := argsObj["task"].(string); ok && t != "" {
+							task = t
+						}
+					}
+					lfmCall, err := s.dispatchMeepoTools(r.Context(), task, operationalTools)
+					if err == nil && lfmCall != nil {
+						sendToolCallChunk(w, flusher, lfmCall)
+						return
+					}
+					// Fallback: bash execution
+					argsJSON, _ := json.Marshal(map[string]string{"command": task})
+					fallbackCall := map[string]interface{}{
+						"id":   fmt.Sprintf("call_%d", time.Now().UnixNano()),
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      "bash",
+							"arguments": string(argsJSON),
+						},
+					}
+					sendToolCallChunk(w, flusher, fallbackCall)
+					return
+				} else if toolCallName == "meepo_code" {
+					var argsObj map[string]interface{}
+					lang := "code"
+					task := argsStr
+					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
+						if l, ok := argsObj["language"].(string); ok && l != "" {
+							lang = l
+						}
+						if t, ok := argsObj["task"].(string); ok && t != "" {
+							task = t
+						}
+					}
+					qwenCode, err := s.dispatchMeepoCode(r.Context(), lang, task)
+					if err == nil && qwenCode != "" {
+						sendContentChunk(w, flusher, qwenCode)
+						return
+					}
+				} else if toolCallName == "meepo_cloud" {
+					var argsObj map[string]interface{}
+					problem := argsStr
+					if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
+						if p, ok := argsObj["problem"].(string); ok && p != "" {
+							problem = p
+						}
+					}
+					verdict, err := s.consultCloudAdvisor(r.Context(), problem)
+					if err == nil && verdict != "" {
+						sendContentChunk(w, flusher, verdict)
+						return
+					}
+				} else if toolCallName != "" {
+					directCall := map[string]interface{}{
+						"id":   toolCallID,
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      toolCallName,
+							"arguments": argsStr,
+						},
+					}
+					sendToolCallChunk(w, flusher, directCall)
+					return
+				}
+			}
+
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			if hasFlusher {
+				flusher.Flush()
+			}
+			break
+		}
+
+		dataJSON := strings.TrimPrefix(trimmed, "data: ")
+		var chunkMap map[string]interface{}
+		if err := json.Unmarshal([]byte(dataJSON), &chunkMap); err == nil {
+			choices, _ := chunkMap["choices"].([]interface{})
+			if len(choices) > 0 {
+				choice, _ := choices[0].(map[string]interface{})
+				delta, _ := choice["delta"].(map[string]interface{})
+
+				// Check tool call delta
+				if tcList, ok := delta["tool_calls"].([]interface{}); ok && len(tcList) > 0 {
+					isToolCall = true
+					tcMap, _ := tcList[0].(map[string]interface{})
+					if id, ok := tcMap["id"].(string); ok && id != "" {
+						toolCallID = id
+					}
+					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						if name, ok := fn["name"].(string); ok && name != "" {
+							toolCallName = name
+						}
+						if args, ok := fn["arguments"].(string); ok {
+							toolCallArgs.WriteString(args)
+						}
+					}
+					continue
+				}
+
+				if !isToolCall {
+					chunkMap["model"] = "meepo"
+					outBytes, _ := json.Marshal(chunkMap)
+					fmt.Fprintf(w, "data: %s\n\n", outBytes)
+					if hasFlusher {
+						flusher.Flush()
+					}
+				}
+			}
+		}
+	}
+}
+
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -337,53 +893,19 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Determine Target Role
-	targetRole := "chat"
 	reqModel := req.Model
 	if reqModel == "" {
-		reqModel = "mesh"
+		reqModel = "meepo"
 	}
 
-	if reqModel == "mesh" || reqModel == "meepo/mesh" || reqModel == "meepo-mesh" {
-		// Check if active tool loop
-		var lastNonAssistant *ChatMessage
-		for i := len(req.Messages) - 1; i >= 0; i-- {
-			if req.Messages[i].Role != "assistant" {
-				lastNonAssistant = &req.Messages[i]
-				break
-			}
-		}
-
-		if lastNonAssistant != nil && lastNonAssistant.Role == "tool" {
-			targetRole = "tools"
-		} else {
-			// Check for image input
-			hasImage := false
-			for i := len(req.Messages) - 1; i >= 0; i-- {
-				if req.Messages[i].Role == "user" {
-					cStr := string(req.Messages[i].Content)
-					if strings.Contains(cStr, `"type":"image"`) || strings.Contains(cStr, `"type":"image_url"`) {
-						hasImage = true
-					}
-					break
-				}
-			}
-
-			if hasImage {
-				targetRole = "chat"
-			} else {
-				userPrompt := extractUserPrompt(req.Messages)
-				var toolNames []string
-				for _, t := range req.Tools {
-					if t.Function.Name != "" {
-						toolNames = append(toolNames, t.Function.Name)
-					}
-				}
-				decision := s.router.RouteTurn(r.Context(), userPrompt, toolNames)
-				targetRole = decision.TargetRole
-			}
-		}
-	} else if strings.Contains(reqModel, "chat") {
+	// Conductor Mode: user always speaks to meepo-chat (Gemma) which delegates to sub-brains
+	isConductor := reqModel == "meepo" || reqModel == "mesh" || reqModel == "meepo/mesh" || reqModel == "meepo/meepo" || reqModel == "meepo-mesh"
+	if isConductor {
+		s.handleConductorCompletion(w, r, req)
+		return
+	}
+	targetRole := "chat"
+	if strings.Contains(reqModel, "chat") {
 		targetRole = "chat"
 	} else if strings.Contains(reqModel, "tools") {
 		targetRole = "tools"
